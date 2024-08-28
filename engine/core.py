@@ -3,16 +3,18 @@ import matplotlib.pyplot as plt
 
 from stable_baselines3.common.type_aliases import GymEnv, Schedule
 from stable_baselines3 import PPO
+from typing import Union, Optional
 
-from typing import Type, Union, Optional
+from engine.backtest import BacktestEngine
 
 
-class ResearchEngine:
+class ResearchEngine(BacktestEngine):
     def __init__(
             self,
             env: GymEnv,
             data_type: pd.DataFrame
     ):
+        super().__init__()
         self.model: Optional[PPO] = None
         self.data = data_type
         self.env = env
@@ -105,28 +107,17 @@ class ResearchEngine:
     def run(self, max_steps: int):
         obs = self.env.reset()
 
-        px_lst = []
-        pnl_lst = []
         for i in range(max_steps):
             ppo_action, _states = self.model.predict(obs)
             obs, rewards, dones, info = self.env.step(ppo_action)
             # print(obs, rewards, i, max_steps)
             if i % 10 == 0:
-                px_lst.append(obs[0][3])
-                pnl_lst.append(rewards[0])
+                price = obs[0][3]  # 假设第4个元素是价格
+                pnl = rewards[0]
+                self.update(price, pnl)
 
             if dones[0]:
                 break  # 完成后跳出
 
-        plt.style.use('seaborn-v0_8')
-
-        fig, axs = plt.subplots(2, 1, figsize=(10, 8))
-
-        axs[0].plot(px_lst)
-        axs[0].set_title('Price (Close)')
-
-        axs[1].plot(pnl_lst)
-        axs[1].set_title('PnL (Reward)')
-
-        plt.tight_layout()
-        plt.show()
+        self.calculate_max_drawdown()
+        self.plot()
