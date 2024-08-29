@@ -5,7 +5,7 @@ from stable_baselines3.common.type_aliases import GymEnv, Schedule
 from stable_baselines3 import PPO
 from typing import Union, Optional
 
-from engine.backtest import BacktestEngine
+from engine.backtest.backtest_module import BacktestEngine
 
 
 class ResearchEngine(BacktestEngine):
@@ -16,7 +16,7 @@ class ResearchEngine(BacktestEngine):
     ):
         super().__init__()
         self.model: Optional[PPO] = None
-        self.data = data_type
+        self.backtest_data = data_type
         self.env = env
 
     def model_init(
@@ -107,17 +107,18 @@ class ResearchEngine(BacktestEngine):
     def run(self, max_steps: int):
         obs = self.env.reset()
 
+        token = "FIL-USDT"
+        self.token_default(token)
+
         for i in range(max_steps):
             ppo_action, _states = self.model.predict(obs)
             obs, rewards, dones, info = self.env.step(ppo_action)
             # print(obs, rewards, i, max_steps)
-            if i % 10 == 0:
-                price = obs[0][3]  # 假设第4个元素是价格
-                pnl = rewards[0]
-                self.update(price, pnl)
+
+            self.check_orders(price=obs[0][3], token=token)
 
             if dones[0]:
-                break  # 完成后跳出
+                break
 
-        self.calculate_max_drawdown()
-        self.plot()
+        self.eval.calculate_max_drawdown()
+        self.eval.plot()

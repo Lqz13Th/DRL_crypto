@@ -1,24 +1,26 @@
 import matplotlib.pyplot as plt
 
 
-class BacktestEngine:
-    def __init__(self):
+class EvaluationEngine:
+    def __init__(self, fund: float):
+        self.fund_history = []
         self.price_history = []
-        self.pnl_history = []
         self.position_history = []
+
+        self.funds = fund
         self.max_drawdown = 0
-        self.cumulative_pnl = 0
-        self.current_position = 0
+        self.total_position = 0
 
     def update(self, price: float, pnl: float):
+        self.funds += pnl
+
         self.price_history.append(price)
-        self.pnl_history.append(pnl)
-        self.cumulative_pnl += pnl
-        self.position_history.append(self.current_position)
+        self.fund_history.append(self.funds)
+        self.position_history.append(self.total_position)
 
     def calculate_max_drawdown(self):
-        peak = self.pnl_history[0]
-        for pnl in self.pnl_history:
+        peak = self.fund_history[0]
+        for pnl in self.fund_history:
             if pnl > peak:
                 peak = pnl
 
@@ -33,7 +35,7 @@ class BacktestEngine:
         axs[0].plot(self.price_history)
         axs[0].set_title('Price (Close)')
 
-        axs[1].plot(self.pnl_history)
+        axs[1].plot(self.fund_history)
         axs[1].set_title('PnL (Reward)')
 
         axs[2].plot(self.position_history)

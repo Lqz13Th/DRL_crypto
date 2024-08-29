@@ -54,6 +54,7 @@ class CryptoTradingEnv(gym.Env):
             if self.position == 0:
                 self.position = self.balance / current_price
                 self.balance = 0
+
         elif action == 2:  # 卖出
             if self.position > 0:
                 self.balance = self.position * current_price
