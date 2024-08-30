@@ -6,7 +6,7 @@ from stable_baselines3 import PPO
 from typing import Union, Optional
 
 from engine.backtest.backtest_module import BacktestEngine
-
+from engine.backtest.order_module import Order
 
 class ResearchEngine(BacktestEngine):
     def __init__(
@@ -111,11 +111,23 @@ class ResearchEngine(BacktestEngine):
         self.token_default(token)
 
         for i in range(max_steps):
-            ppo_action, _states = self.model.predict(obs)
+            ppo_action, _states = self.model.predict(obs, deterministic=True)
             obs, rewards, dones, info = self.env.step(ppo_action)
             # print(obs, rewards, i, max_steps)
 
-            self.check_orders(price=obs[0][3], token=token)
+            price = obs[0][3]
+            print(ppo_action, self.eval.total_position, self.position[token])
+            match ppo_action:
+                case 1:
+                    order = Order(side=1, price=price, size=1, order_type="market")
+                    self.check_orders(price=obs[0][3], token=token, orders=[order])
+
+                case 2:
+                    order = Order(side=-1, price=price, size=1, order_type="market")
+                    self.check_orders(price=obs[0][3], token=token, orders=[order])
+
+                case _:
+                    self.check_orders(price=obs[0][3], token=token)
 
             if dones[0]:
                 break

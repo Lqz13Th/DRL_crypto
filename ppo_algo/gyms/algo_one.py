@@ -9,7 +9,7 @@ class CryptoTradingEnv(gym.Env):
         super(CryptoTradingEnv, self).__init__()
         self.df = data_frame
         self.current_step = 0
-        self.initial_balance = 1000
+        self.initial_balance = 10000
         self.balance = self.initial_balance
         self.position = 0  # 持仓状态：0=空仓，1=持有
 
