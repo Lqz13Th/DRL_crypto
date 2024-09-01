@@ -19,7 +19,7 @@ if __name__ == '__main__':
     max_steps = df.index.max()
     print(df)
 
-    # n_updates = total_timesteps // (n_steps * n_envs)
+    # n_updates = total_time_steps // (n_steps * n_envs)
 
     engine = ResearchEngine(
         env=make_vec_env(lambda: CryptoTradingEnv(df), n_envs=1),
