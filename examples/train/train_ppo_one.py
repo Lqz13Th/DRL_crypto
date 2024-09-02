@@ -30,7 +30,7 @@ if __name__ == '__main__':
         policy="MlpPolicy",
         verbose=2,
         learning_rate=3e-4,
-        n_steps=max(int(max_steps * 0.005), 60 * 24 * 7),
+        n_steps=256,
         # Number of steps to collect in each environment before updating
         batch_size=32,  # Batch size used for optimization
         n_epochs=10,
@@ -49,7 +49,7 @@ if __name__ == '__main__':
         device="auto",
         tensorboard_log="./ppo_crypto_trading_tensorboard/",
     ).model_learn(
-        test_set_steps=int(max_steps * 0.7),
+        total_timestep=10**100,
         callback=TensorboardCallback(),
     ).model_save(
         path="ppo_crypto_trading",

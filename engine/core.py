@@ -73,13 +73,13 @@ class ResearchEngine(BacktestEngine):
 
     def model_learn(
             self,
-            test_set_steps: int,
+            total_timestep: int,
             callback=None,
     ) -> "ResearchEngine":
         if self.model is None:
             raise ValueError("Model is not init. Please call set_model before training.")
 
-        self.model.learn(total_timesteps=test_set_steps, callback=callback)
+        self.model.learn(total_timesteps=total_timestep, callback=callback)
 
         return self
 
