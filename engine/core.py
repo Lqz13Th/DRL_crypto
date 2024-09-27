@@ -8,6 +8,7 @@ from typing import Union, Optional
 from engine.backtest.backtest_module import BacktestEngine
 from engine.backtest.order_module import Order
 
+
 class ResearchEngine(BacktestEngine):
     def __init__(
             self,
