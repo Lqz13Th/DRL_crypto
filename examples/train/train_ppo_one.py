@@ -25,6 +25,7 @@ if __name__ == '__main__':
         env=make_vec_env(lambda: CryptoTradingEnv(df), n_envs=1),
         data_type=df
     )
+    # tensorboard --logdir=examples/train/ppo_crypto_trading_tensorboard/
 
     engine.model_init(
         policy="MlpPolicy",
