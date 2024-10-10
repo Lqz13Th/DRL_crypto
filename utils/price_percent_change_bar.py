@@ -10,6 +10,56 @@ def scaled_sigmoid(x: float, start: float, end: float) -> float:
     return score / 2
 
 
+def rolling_scaled_sigmoid(x: float, mean: float, std: float) -> float:
+    """使用Z-score标准化后进行scaled sigmoid变换"""
+    if std == 0:  # 防止除以零
+        return scaled_sigmoid(x, mean, mean + 1e-10)  # 如果标准差为0，则返回相对值
+
+    z_score = (x - mean) / std
+    return scaled_sigmoid(z_score, -1, 1)  # 将Z-score映射到[-1, 1]区间
+
+
+def normalize_data(df: pd.DataFrame) -> pd.DataFrame:
+    df_normalized = df.copy()
+
+    df_normalized['scaled_sigmoid_price'] = df_normalized['price'].apply(
+        lambda x: scaled_sigmoid(x, 0, 10)
+    )
+    df_normalized['scaled_sigmoid_sum_buy_size'] = df_normalized['sum_buy_size'].apply(
+        lambda x: scaled_sigmoid(x, 0, 100_000)
+    )
+    df_normalized['scaled_sigmoid_sum_sell_size'] = df_normalized['sum_sell_size'].apply(
+        lambda x: scaled_sigmoid(x, 0, 100_000)
+    )
+    df_normalized['scaled_sigmoid_timestamp_duration'] = df_normalized['timestamp_duration'].apply(
+        lambda x: scaled_sigmoid(x, 0, 600_000)
+    )
+    df_normalized['scaled_sigmoid_price_pct_change'] = df_normalized['price_pct_change'].apply(
+        lambda x: scaled_sigmoid(x, -1., 1.)
+    )
+    df_normalized['scaled_sigmoid_buy_sell_imbalance'] = df_normalized['buy_sell_imbalance'].apply(
+        lambda x: scaled_sigmoid(x, -100_000, 100_000)
+    )
+    return df_normalized
+
+
+def rolling_normalize_data(df: pd.DataFrame, window: int) -> pd.DataFrame:
+    df_normalized = df.copy()
+
+    for column in ['price', 'sum_buy_size', 'sum_sell_size', 'timestamp_duration', 'price_pct_change',
+                   'buy_sell_imbalance']:
+        rolling_mean = df_normalized[column].rolling(window=window, min_periods=1).mean()
+        rolling_std = df_normalized[column].rolling(window=window, min_periods=1).std()
+
+        # 使用滚动均值和标准差进行scaled sigmoid归一化
+        df_normalized[f'scaled_{column}'] = df_normalized.apply(
+            lambda row: rolling_scaled_sigmoid(row[column], rolling_mean[row.name], rolling_std[row.name]),
+            axis=1
+        )
+
+    return df_normalized
+
+
 def generate_px_pct_bar(
         df: pd.DataFrame,
         threshold: float,
@@ -63,30 +113,6 @@ def generate_px_pct_bar(
     )
     bars_df = bars_df.dropna()
     return bars_df
-
-
-def normalize_data(df: pd.DataFrame) -> pd.DataFrame:
-    df_normalized = df.copy()
-
-    df_normalized['scaled_sigmoid_price'] = df_normalized['price'].apply(
-        lambda x: scaled_sigmoid(x, 0, 10)
-    )
-    df_normalized['scaled_sigmoid_sum_buy_size'] = df_normalized['sum_buy_size'].apply(
-        lambda x: scaled_sigmoid(x, 0, 100_000)
-    )
-    df_normalized['scaled_sigmoid_sum_sell_size'] = df_normalized['sum_sell_size'].apply(
-        lambda x: scaled_sigmoid(x, 0, 100_000)
-    )
-    df_normalized['scaled_sigmoid_timestamp_duration'] = df_normalized['timestamp_duration'].apply(
-        lambda x: scaled_sigmoid(x, 0, 600_000)
-    )
-    df_normalized['scaled_sigmoid_price_pct_change'] = df_normalized['price_pct_change'].apply(
-        lambda x: scaled_sigmoid(x, -1., 1.)
-    )
-    df_normalized['scaled_sigmoid_buy_sell_imbalance'] = df_normalized['buy_sell_imbalance'].apply(
-        lambda x: scaled_sigmoid(x, -100_000, 100_000)
-    )
-    return df_normalized
 
 
 if __name__ == "__main__":

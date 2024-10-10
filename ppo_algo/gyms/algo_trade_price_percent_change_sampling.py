@@ -4,9 +4,9 @@ import gymnasium as gym
 from gymnasium import spaces
 
 
-class CandleBarSimpleEnv(gym.Env):
+class PricePercentChangeSamplingEnv(gym.Env):
     def __init__(self, data_frame):
-        super(CandleBarSimpleEnv, self).__init__()
+        super(PricePercentChangeSamplingEnv, self).__init__()
         self.df = data_frame
         self.current_step = 0
         self.initial_balance = 10000
@@ -14,15 +14,14 @@ class CandleBarSimpleEnv(gym.Env):
         self.position = 0  # 持仓状态：0=空仓，1=持有
 
         assert all(col in self.df.columns for col in [
-            'Open',
-            'High',
-            'Low',
-            'Close',
-            'Volume'
-        ]), "DataFrame should have columns: 'Open', 'High', 'Low', 'Close', 'Volume'"
+            'price',
+            'quantity',
+            'transact_time',
+            'is_buyer_maker',
+        ]), "DataFrame lack of columns"
 
         self.action_space = spaces.Discrete(3)  # 三种动作：保持，买入，卖出
-        self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(5,), dtype=np.float32)
+        self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(4,), dtype=np.float32)
 
     def reset(self, seed=None, options=None):  # 添加 seed 参数
         super().reset(seed=seed)
@@ -44,11 +43,14 @@ class CandleBarSimpleEnv(gym.Env):
         return current_obs, reward, terminated, truncated, {}
 
     def _next_observation(self):
-        observation_value = self.df.iloc[self.current_step][['Open', 'High', 'Low', 'Close', 'Volume']]
+        observation_value = self.df.iloc[self.current_step][
+            ['price', 'quantity', 'transact_time', 'is_buyer_maker']
+        ]
+
         return observation_value.values
 
     def _take_action(self, action):
-        current_price = self.df.loc[self.current_step, 'Close']
+        current_price = self.df.loc[self.current_step, 'price']
 
         if action == 1:  # 买入
             if self.position == 0:
@@ -61,7 +63,7 @@ class CandleBarSimpleEnv(gym.Env):
                 self.position = 0
 
     def _calculate_reward(self):
-        current_price = self.df.loc[self.current_step, 'Close']
+        current_price = self.df.loc[self.current_step, 'price']
         total_value = self.balance + self.position * current_price
         reward = total_value - self.initial_balance
         return reward

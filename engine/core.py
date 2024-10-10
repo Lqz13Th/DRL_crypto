@@ -111,7 +111,7 @@ class ResearchEngine(BacktestEngine):
         token = "FIL-USDT"
         self.token_default(token)
 
-        for i in range(max_steps):
+        while True:
             ppo_action, _states = self.model.predict(obs, deterministic=True)
             obs, rewards, dones, info = self.env.step(ppo_action)
             # print(obs, rewards, i, max_steps)

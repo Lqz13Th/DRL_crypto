@@ -3,7 +3,7 @@ import pandas as pd
 from stable_baselines3.common.env_util import make_vec_env
 
 from ppo_algo.datas import candle_data_parser
-from ppo_algo.gyms.algo_one import CryptoTradingEnv
+from ppo_algo.gyms.algo_one import CandleBarSimpleEnv
 from engine.callback import TensorboardCallback
 from engine.core import ResearchEngine
 
@@ -22,7 +22,7 @@ if __name__ == '__main__':
     # n_updates = total_time_steps // (n_steps * n_envs)
 
     engine = ResearchEngine(
-        env=make_vec_env(lambda: CryptoTradingEnv(df), n_envs=1),
+        env=make_vec_env(lambda: CandleBarSimpleEnv(df), n_envs=1),
         data_type=df
     )
     # tensorboard --logdir=examples/train/ppo_crypto_trading_tensorboard/
