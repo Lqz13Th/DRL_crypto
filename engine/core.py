@@ -105,7 +105,7 @@ class ResearchEngine(BacktestEngine):
 
         return self
 
-    def run(self, max_steps: int):
+    def run(self):
         obs = self.env.reset()
 
         token = "FIL-USDT"
