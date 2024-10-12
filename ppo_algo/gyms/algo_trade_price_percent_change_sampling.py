@@ -301,7 +301,7 @@ class PricePercentChangeSamplingEnv(gym.Env):
         current_price = self.op.pub_trade
 
         pnl_rate = pnl / self.be.eval.funds
-        pos_value_rate = pos_value / self.be.eval.funds
+        pos_value_rate = abs(pos_value) / self.be.eval.funds
         current_pos_rate = 0
 
         match self.be.side[self.op.single_token]:
