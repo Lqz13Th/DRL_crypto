@@ -2,7 +2,7 @@
 
 **A deep reinforcement learning research platform for crypto trading.**
 
-`DRL_crypto` encapsulates a reinforcement learning engine built on top of Stable Baselines3 (SB3) and Gym, as well as a backtesting engine for strategy validation. 
+`DRL_crypto` encapsulates a reinforcement learning engine built on top of Stable Baselines3 (SB3) and gymnasium, as well as a backtesting engine for strategy validation. 
 
 ## Features
 
