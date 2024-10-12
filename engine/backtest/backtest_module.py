@@ -55,13 +55,13 @@ class BacktestEngine:
                         pass
 
     def _adjust_order_buy_fills(self, order: Order, token: str):
-        self.eval.total_position = sum(
+        self.eval.total_position_value = sum(
             self.position[key] * self.average_price[key] for key in self.position.keys()
         )
 
         match self.side[token]:
             case 1:
-                if self.eval.total_position < self.eval.funds:
+                if self.eval.total_position_value < self.eval.funds:
                     self.position[token] += order.size
                     self._calculate_average_price(
                         filled_size=order.size,
@@ -70,7 +70,7 @@ class BacktestEngine:
                     )
 
                 else:
-                    print("Insufficient margin", self.eval.total_position, self.eval.funds)
+                    print("Insufficient margin", self.eval.total_position_value, self.eval.funds)
 
             case -1:
                 filled_size = min(self.position[token], order.size)

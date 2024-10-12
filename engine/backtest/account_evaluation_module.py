@@ -7,16 +7,18 @@ class EvaluationEngine:
         self.price_history = []
         self.position_history = []
 
+        self.cumulative_pnl = 0
         self.funds = fund
         self.max_drawdown = 0
-        self.total_position = 0
+        self.total_position_value = 0
 
     def update(self, price: float, pnl: float):
+        self.cumulative_pnl += pnl
         self.funds += pnl
 
         self.price_history.append(price)
         self.fund_history.append(self.funds)
-        self.position_history.append(self.total_position)
+        self.position_history.append(self.total_position_value)
 
     def calculate_max_drawdown(self):
         peak = self.fund_history[0]

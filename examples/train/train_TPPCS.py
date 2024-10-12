@@ -20,10 +20,10 @@ if __name__ == '__main__':
     # n_updates = total_time_steps // (n_steps * n_envs)
 
     engine = ResearchEngine(
-        env=make_vec_env(lambda: PricePercentChangeSamplingEnv(df), n_envs=1),
+        env=make_vec_env(lambda: PricePercentChangeSamplingEnv(df, "FIL-USDT"), n_envs=1),
         data_type=df
     )
-    # tensorboard --logdir=examples/train/ppo_crypto_trading_tensorboard/
+    # tensorboard --logdir=examples/train/TPPCS_tensorboard
 
     engine.model_init(
         policy="MultiInputPolicy",

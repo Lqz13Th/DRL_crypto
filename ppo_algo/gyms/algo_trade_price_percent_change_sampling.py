@@ -4,7 +4,10 @@ import pandas as pd
 
 from gymnasium import spaces
 
+from engine.backtest.order_module import Order
+from engine.backtest.backtest_module import BacktestEngine
 from utils.price_percent_change_bar import rolling_normalize_data
+from utils.price_percent_change_bar import scaled_sigmoid
 
 
 class ObservationSpaceParser:
@@ -13,7 +16,10 @@ class ObservationSpaceParser:
             data_frame,
             rolling_window: int,
             rolling_normalize_window: int,
+            single_token: str,
     ):
+        self.single_token = single_token
+
         self.raw_df = data_frame
 
         self.price_threshold = 0.001
@@ -77,7 +83,7 @@ class ObservationSpaceParser:
             self.sum_buy_size = 0
             self.sum_sell_size = 0
 
-            bars_df = pd.DataFrame(bar)
+            bars_df = pd.DataFrame([bar])
 
             self.features_df = self.add_new_row(
                 self.features_df,
@@ -155,17 +161,22 @@ class PricePercentChangeSamplingEnv(gym.Env):
     def __init__(
             self,
             data_frame,
+            single_token: str,
             numb_features=6,
             rolling_window=10,
             rolling_normalize_window=200,
     ):
         super(PricePercentChangeSamplingEnv, self).__init__()
-        self.op = ObservationSpaceParser(data_frame, rolling_window, rolling_normalize_window)
+        self.op = ObservationSpaceParser(data_frame, rolling_window, rolling_normalize_window, single_token)
+        self.be = BacktestEngine()
+        self.be.token_default(single_token)
 
         self.raw_df = data_frame
-        self.initial_balance = 10000
-        self.balance = self.initial_balance
-        self.position = 0  # 持仓状态：0=空仓，1=持有
+
+        self.pnl_rate = 0
+        self.pos_value_rate = 0
+        self.current_pos_rate = 0
+        self.price = self.op.pub_trade
 
         assert all(col in self.raw_df.columns for col in [
             'price',
@@ -180,14 +191,11 @@ class PricePercentChangeSamplingEnv(gym.Env):
         self.observation_space = spaces.Dict({
             "pub_price": spaces.Box(low=-np.inf, high=np.inf, shape=(3,), dtype=np.float64),
             "features": spaces.Box(low=0, high=1, shape=(rolling_window, numb_features), dtype=np.float32),
-            "account_states": spaces.Box(low=-np.inf, high=np.inf, shape=(1,), dtype=np.float64), # to_do
+            "account_states": spaces.Box(low=0, high=1, shape=(3,), dtype=np.float32),
         })
 
     def reset(self, seed=None, options=None):  # 添加 seed 参数
         super().reset(seed=seed)
-
-        self.balance = self.initial_balance
-        self.position = 0
 
         self.op.features_df = self.op.generate_px_pct_bar_on_reset()
         print(self.op.features_df)
@@ -200,14 +208,20 @@ class PricePercentChangeSamplingEnv(gym.Env):
         print(normalized_df)
         print(len(self.op.features_df), len(normalized_df), self.op.rolling_window)
 
-        avg_px_range = 0 if self.op.enter_px == 0 else (self.op.pub_trade - self.op.enter_px) / self.op.enter_px
         init_obs = {
             "pub_price": np.array(
                 [self.op.bid_fake, self.op.ask_fake, self.op.pub_trade],
                 dtype=np.float64,
             ),
             "features": normalized_df.values.astype(np.float32),
-            "account_states": avg_px_range
+            "account_states": np.array(
+                [
+                    scaled_sigmoid(self.pnl_rate, -2, 2),
+                    scaled_sigmoid(self.pos_value_rate, -2, 2),
+                    scaled_sigmoid(self.current_pos_rate, -2, 2),
+                ],
+                dtype=np.float64,
+            ),
         }
         if options == "live":
             pass
@@ -220,54 +234,90 @@ class PricePercentChangeSamplingEnv(gym.Env):
         reward = self._calculate_reward()
         if options == "backtest":
             terminated = self.op.raw_idx >= self.op.raw_idx_max
+            print("dddddddddddddddddddoneeeeeeee", self.be.eval.funds)
 
         else:
             terminated = self.op.raw_idx >= self.op.raw_idx_max_train
 
         truncated = False
         next_obs = self._next_observation()
+        infos = {
+            "price": self.op.pub_trade,
+            "trade_signal": trade_signal,
+        }
 
-        return next_obs, reward, terminated, truncated, {"trade_signal": trade_signal}
+        self.price = self.op.pub_trade
+        # print(next_obs)
+        return next_obs, reward, terminated, truncated, infos
 
     def _next_observation(self):
+        self.op.generate_px_pct_bar_on_step()
+
         normalized_df = rolling_normalize_data(
             self.op.features_df,
             window=self.op.rolling_normalize_window,
         ).tail(self.op.rolling_window).reset_index(drop=True)
 
-        avg_px_range = 0 if self.op.enter_px == 0 else (self.op.pub_trade - self.op.enter_px) / self.op.enter_px
         next_obs = {
             "pub_price": np.array(
                 [self.op.bid_fake, self.op.ask_fake, self.op.pub_trade],
                 dtype=np.float64,
             ),
             "features": normalized_df.values.astype(np.float32),
-            "account_states": avg_px_range
+            "account_states": np.array(
+                [
+                    scaled_sigmoid(self.pnl_rate, -2, 2),
+                    scaled_sigmoid(self.pos_value_rate, -2, 2),
+                    scaled_sigmoid(self.current_pos_rate, -2, 2),
+                ],
+                dtype=np.float64,
+            ),
         }
 
         return next_obs
 
     def _take_action(self, action):
         trade_signal = 0
-        if action == 1:  # 买入
-            if self.position == 0:
-                self.position = self.balance / self.op.ask_fake
-                self.balance = 0
-                self.op.enter_px = self.op.ask_fake
+        match action:
+            case 1:
+                order = Order(side=1, price=self.op.ask_fake, size=1, order_type="market")
+                self.be.check_orders(price=self.op.ask_fake, token=self.op.single_token, orders=[order])
                 trade_signal = 1
 
-        elif action == 2:  # 卖出
-            if self.position > 0:
-                self.balance = self.position * self.op.bid_fake * 0.999
-                self.position = 0
-                self.op.enter_px = 0
+            case 2:
+                order = Order(side=-1, price=self.op.bid_fake, size=1, order_type="market")
+                self.be.check_orders(price=self.op.bid_fake, token=self.op.single_token, orders=[order])
                 trade_signal = -1
+
+            case _:
+                self.be.check_orders(price=self.op.pub_trade, token=self.op.single_token)
 
         return trade_signal
 
     def _calculate_reward(self):
+        pnl = self.be.eval.cumulative_pnl
+        pos_value = self.be.eval.total_position_value
+        avg_pos_price = self.be.average_price[self.op.single_token]
         current_price = self.op.pub_trade
-        total_value = self.balance + self.position * current_price
-        reward = total_value - self.initial_balance
-        return reward
+
+        pnl_rate = pnl / self.be.eval.funds
+        pos_value_rate = pos_value / self.be.eval.funds
+        current_pos_rate = 0
+
+        match self.be.side[self.op.single_token]:
+            case 1:
+                current_pos_rate = (current_price - avg_pos_price) / avg_pos_price
+
+            case -1:
+                current_pos_rate = (avg_pos_price - current_price) / avg_pos_price
+
+            case _:
+                pass
+
+        self.pnl_rate = pnl_rate
+        self.pos_value_rate = pos_value_rate
+        self.current_pos_rate = current_pos_rate
+
+        reward = pnl_rate - 0.3 * pos_value_rate + 0.7 * current_pos_rate
+        return scaled_sigmoid(reward, -2, 2) - 0.5
 
