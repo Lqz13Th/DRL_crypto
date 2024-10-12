@@ -46,8 +46,8 @@ def normalize_data(df: pd.DataFrame) -> pd.DataFrame:
 def rolling_normalize_data(df: pd.DataFrame, window: int) -> pd.DataFrame:
     df_normalized = df.copy()
 
-    for column in ['price', 'sum_buy_size', 'sum_sell_size', 'timestamp_duration', 'price_pct_change',
-                   'buy_sell_imbalance']:
+    for column in ['sum_buy_size', 'sum_sell_size', 'timestamp_duration', 'price_pct_change',
+                   'buy_sell_imbalance', 'change_side']:
         rolling_mean = df_normalized[column].rolling(window=window, min_periods=1).mean()
         rolling_std = df_normalized[column].rolling(window=window, min_periods=1).std()
 
@@ -57,7 +57,7 @@ def rolling_normalize_data(df: pd.DataFrame, window: int) -> pd.DataFrame:
             axis=1
         )
 
-    return df_normalized
+    return df_normalized.iloc[:, 6:]
 
 
 def generate_px_pct_bar(

@@ -19,7 +19,7 @@ class ObservationSpaceParser:
         self.price_threshold = 0.001
         # indexes utils
         self.raw_idx = 0
-        self.raw_idx_max = len(data_frame) - 1
+        self.raw_idx_max = data_frame.index.max()
         self.raw_idx_max_train = self.raw_idx_max * 0.7
         # ===================================================================
         # generate from histo data or fetch from live data
@@ -38,11 +38,13 @@ class ObservationSpaceParser:
         self.sum_buy_size = 0
         self.sum_sell_size = 0
 
+        self.enter_px = 0
+
     def generate_px_pct_bar_on_step(
             self,
     ):
         self.raw_idx += 1
-        px = self.raw_df.iloc[self.raw_idx]["price"]["price"]
+        px = self.raw_df.iloc[self.raw_idx]["price"]
         sz = self.raw_df.iloc[self.raw_idx]["quantity"]
         ts = self.raw_df.iloc[self.raw_idx]["transact_time"]
         side = -1 if self.raw_df.iloc[self.raw_idx]["is_buyer_maker"] else 1  # 卖方主导为 -1，买方主导为 1
@@ -93,8 +95,9 @@ class ObservationSpaceParser:
 
         print(self.last_px)
         features_idx = 0
-        while features_idx > self.rolling_window + self.rolling_normalize_window:
-            px = self.raw_df.iloc[self.raw_idx]["price"]["price"]
+        print(self.rolling_window, self.rolling_normalize_window, self.price_threshold)
+        while features_idx < self.rolling_window + self.rolling_normalize_window:
+            px = self.raw_df.iloc[self.raw_idx]["price"]
             sz = self.raw_df.iloc[self.raw_idx]["quantity"]
             ts = self.raw_df.iloc[self.raw_idx]["transact_time"]
             side = -1 if self.raw_df.iloc[self.raw_idx]["is_buyer_maker"] else 1  # 卖方主导为 -1，买方主导为 1
@@ -102,7 +105,6 @@ class ObservationSpaceParser:
             self.raw_idx += 1
 
             px_pct = (px - self.last_px) / self.last_px
-
             self.pub_trade = px
             if side == 1:
                 self.sum_buy_size += sz
@@ -133,7 +135,10 @@ class ObservationSpaceParser:
                 features_idx += 1
 
         bars_df = pd.DataFrame(bars)
+        print(bars_df)
+
         bars_df = bars_df.dropna()
+        print(bars_df)
         return bars_df
 
     @staticmethod
@@ -171,11 +176,11 @@ class PricePercentChangeSamplingEnv(gym.Env):
 
         self.action_space = spaces.Discrete(3)
 
-        # multi modal
+        # multi modal tensorboard --logdir=examples/train/TPPCS_tensorboard/
         self.observation_space = spaces.Dict({
             "pub_price": spaces.Box(low=-np.inf, high=np.inf, shape=(3,), dtype=np.float64),
-            "features": spaces.Box(low=0, high=1, shape=(numb_features, rolling_window), dtype=np.float32),
-            # "account_states": spaces.Box(low=-np.inf, high=np.inf, shape=(3,), dtype=np.float64), # to_do
+            "features": spaces.Box(low=0, high=1, shape=(rolling_window, numb_features), dtype=np.float32),
+            "account_states": spaces.Box(low=-np.inf, high=np.inf, shape=(1,), dtype=np.float64), # to_do
         })
 
     def reset(self, seed=None, options=None):  # 添加 seed 参数
@@ -185,35 +190,44 @@ class PricePercentChangeSamplingEnv(gym.Env):
         self.position = 0
 
         self.op.features_df = self.op.generate_px_pct_bar_on_reset()
+        print(self.op.features_df)
+
         normalized_df = rolling_normalize_data(
             self.op.features_df,
             window=self.op.rolling_normalize_window,
         ).tail(self.op.rolling_window).reset_index(drop=True)
 
-        print(self.op.features_df)
         print(normalized_df)
         print(len(self.op.features_df), len(normalized_df), self.op.rolling_window)
+
+        avg_px_range = 0 if self.op.enter_px == 0 else (self.op.pub_trade - self.op.enter_px) / self.op.enter_px
         init_obs = {
             "pub_price": np.array(
                 [self.op.bid_fake, self.op.ask_fake, self.op.pub_trade],
                 dtype=np.float64,
             ),
-            "features": normalized_df.values.astype(np.float32)
+            "features": normalized_df.values.astype(np.float32),
+            "account_states": avg_px_range
         }
         if options == "live":
             pass
 
-        return init_obs
+        return init_obs, {}
 
-    def step(self, action_state):
-        self._take_action(action_state)
+    def step(self, action_state, options=None):
+        trade_signal = self._take_action(action_state)
 
         reward = self._calculate_reward()
-        terminated = self.op.raw_idx >= self.op.raw_idx_max_train
+        if options == "backtest":
+            terminated = self.op.raw_idx >= self.op.raw_idx_max
+
+        else:
+            terminated = self.op.raw_idx >= self.op.raw_idx_max_train
+
         truncated = False
         next_obs = self._next_observation()
 
-        return next_obs, reward, terminated, truncated, {}
+        return next_obs, reward, terminated, truncated, {"trade_signal": trade_signal}
 
     def _next_observation(self):
         normalized_df = rolling_normalize_data(
@@ -221,26 +235,35 @@ class PricePercentChangeSamplingEnv(gym.Env):
             window=self.op.rolling_normalize_window,
         ).tail(self.op.rolling_window).reset_index(drop=True)
 
+        avg_px_range = 0 if self.op.enter_px == 0 else (self.op.pub_trade - self.op.enter_px) / self.op.enter_px
         next_obs = {
             "pub_price": np.array(
                 [self.op.bid_fake, self.op.ask_fake, self.op.pub_trade],
                 dtype=np.float64,
             ),
-            "features": normalized_df.values.astype(np.float32)
+            "features": normalized_df.values.astype(np.float32),
+            "account_states": avg_px_range
         }
 
         return next_obs
 
     def _take_action(self, action):
+        trade_signal = 0
         if action == 1:  # 买入
             if self.position == 0:
                 self.position = self.balance / self.op.ask_fake
                 self.balance = 0
+                self.op.enter_px = self.op.ask_fake
+                trade_signal = 1
 
         elif action == 2:  # 卖出
             if self.position > 0:
                 self.balance = self.position * self.op.bid_fake * 0.999
                 self.position = 0
+                self.op.enter_px = 0
+                trade_signal = -1
+
+        return trade_signal
 
     def _calculate_reward(self):
         current_price = self.op.pub_trade

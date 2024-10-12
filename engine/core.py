@@ -113,17 +113,17 @@ class ResearchEngine(BacktestEngine):
 
         while True:
             ppo_action, _states = self.model.predict(obs, deterministic=True)
-            obs, rewards, dones, info = self.env.step(ppo_action)
+            obs, rewards, dones, _, trade_signal = self.env.step(ppo_action)
             # print(obs, rewards, i, max_steps)
 
             price = obs[0][3]
             print(ppo_action, self.eval.total_position, self.position[token])
-            match ppo_action:
+            match trade_signal:
                 case 1:
                     order = Order(side=1, price=price, size=1, order_type="market")
                     self.check_orders(price=obs[0][3], token=token, orders=[order])
 
-                case 2:
+                case -1:
                     order = Order(side=-1, price=price, size=1, order_type="market")
                     self.check_orders(price=obs[0][3], token=token, orders=[order])
 

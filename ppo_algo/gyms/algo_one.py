@@ -34,14 +34,14 @@ class CandleBarSimpleEnv(gym.Env):
         return self._next_observation(), {}
 
     def step(self, action_state):
-        self._take_action(action_state)
+        trade_signal = self._take_action(action_state)
         self.current_step += 1
 
         reward = self._calculate_reward()
         terminated = self.current_step >= len(self.df) - 1
         truncated = False
         current_obs = self._next_observation()
-        return current_obs, reward, terminated, truncated, {}
+        return current_obs, reward, terminated, truncated, {"trade_signal": trade_signal}
 
     def _next_observation(self):
         observation_value = self.df.iloc[self.current_step][['Open', 'High', 'Low', 'Close', 'Volume']]
@@ -50,15 +50,21 @@ class CandleBarSimpleEnv(gym.Env):
     def _take_action(self, action):
         current_price = self.df.loc[self.current_step, 'Close']
 
+        trade_signal = 0
+
         if action == 1:  # 买入
             if self.position == 0:
                 self.position = self.balance / current_price
                 self.balance = 0
+                trade_signal = 1
 
         elif action == 2:  # 卖出
             if self.position > 0:
                 self.balance = self.position * current_price
                 self.position = 0
+                trade_signal = -1
+
+        return trade_signal
 
     def _calculate_reward(self):
         current_price = self.df.loc[self.current_step, 'Close']
