@@ -26,7 +26,7 @@ class ObservationSpaceParser:
         # indexes utils
         self.raw_idx = 0
         self.raw_idx_max = data_frame.index.max()
-        self.raw_idx_max_train = self.raw_idx_max * 0.7
+        self.raw_idx_max_train = int(self.raw_idx_max * 0.1)
         # ===================================================================
         # generate from histo data or fetch from live data
         self.pub_trade = 0
@@ -99,7 +99,7 @@ class ObservationSpaceParser:
 
         bars = []
 
-        print(self.last_px)
+        print(self.last_px, self.raw_idx, self.raw_idx_max_train, self.raw_idx_max)
         features_idx = 0
         print(self.rolling_window, self.rolling_normalize_window, self.price_threshold)
         while features_idx < self.rolling_window + self.rolling_normalize_window:
@@ -163,8 +163,8 @@ class PricePercentChangeSamplingEnv(gym.Env):
             data_frame,
             single_token: str,
             numb_features=6,
-            rolling_window=10,
-            rolling_normalize_window=200,
+            rolling_window=200,
+            rolling_normalize_window=2000,
     ):
         super(PricePercentChangeSamplingEnv, self).__init__()
         self.op = ObservationSpaceParser(data_frame, rolling_window, rolling_normalize_window, single_token)
@@ -196,6 +196,7 @@ class PricePercentChangeSamplingEnv(gym.Env):
 
     def reset(self, seed=None, options=None):  # 添加 seed 参数
         super().reset(seed=seed)
+        self.op.raw_idx = 0
 
         self.op.features_df = self.op.generate_px_pct_bar_on_reset()
         print(self.op.features_df)
@@ -216,9 +217,9 @@ class PricePercentChangeSamplingEnv(gym.Env):
             "features": normalized_df.values.astype(np.float32),
             "account_states": np.array(
                 [
-                    scaled_sigmoid(self.pnl_rate, -2, 2),
-                    scaled_sigmoid(self.pos_value_rate, -2, 2),
-                    scaled_sigmoid(self.current_pos_rate, -2, 2),
+                    scaled_sigmoid(self.pnl_rate, -0.01, 0.01),
+                    scaled_sigmoid(self.pos_value_rate, -1, 1),
+                    scaled_sigmoid(self.current_pos_rate, -0.5, 0.5),
                 ],
                 dtype=np.float64,
             ),
@@ -232,14 +233,21 @@ class PricePercentChangeSamplingEnv(gym.Env):
         trade_signal = self._take_action(action_state)
 
         reward = self._calculate_reward()
-        if options == "backtest":
-            terminated = self.op.raw_idx >= self.op.raw_idx_max
-            print("dddddddddddddddddddoneeeeeeee", self.be.eval.funds)
 
-        else:
-            terminated = self.op.raw_idx >= self.op.raw_idx_max_train
+        terminated = False
+        if options == "backtest":
+            if self.op.raw_idx >= self.op.raw_idx_max:
+                terminated = True
+                print("dddddddddddddddddddoneeeeeeee", self.be.eval.funds)
+                self.op.raw_idx = 0
+
+        elif self.op.raw_idx >= self.op.raw_idx_max_train:
+            terminated = True
+            self.op.raw_idx = 0
 
         truncated = False
+        self.op.generate_px_pct_bar_on_step()
+
         next_obs = self._next_observation()
         infos = {
             "price": self.op.pub_trade,
@@ -251,7 +259,6 @@ class PricePercentChangeSamplingEnv(gym.Env):
         return next_obs, reward, terminated, truncated, infos
 
     def _next_observation(self):
-        self.op.generate_px_pct_bar_on_step()
 
         normalized_df = rolling_normalize_data(
             self.op.features_df,
@@ -266,9 +273,9 @@ class PricePercentChangeSamplingEnv(gym.Env):
             "features": normalized_df.values.astype(np.float32),
             "account_states": np.array(
                 [
-                    scaled_sigmoid(self.pnl_rate, -2, 2),
-                    scaled_sigmoid(self.pos_value_rate, -2, 2),
-                    scaled_sigmoid(self.current_pos_rate, -2, 2),
+                    scaled_sigmoid(self.pnl_rate, -0.01, 0.01),
+                    scaled_sigmoid(self.pos_value_rate, -1, 1),
+                    scaled_sigmoid(self.current_pos_rate, -0.5, 0.5),
                 ],
                 dtype=np.float64,
             ),
@@ -280,14 +287,36 @@ class PricePercentChangeSamplingEnv(gym.Env):
         trade_signal = 0
         match action:
             case 1:
-                order = Order(side=1, price=self.op.ask_fake, size=1, order_type="market")
-                self.be.check_orders(price=self.op.ask_fake, token=self.op.single_token, orders=[order])
+                order = Order(side=1, price=self.op.pub_trade, size=100, order_type="market")
+                self.be.check_orders(price=self.op.pub_trade, token=self.op.single_token, orders=[order])
                 trade_signal = 1
+                print(
+                    self.op.raw_idx,
+                    "buy",
+                    self.price,
+                    self.op.pub_trade,
+                    self.be.eval.funds,
+                    self.be.eval.cumulative_pnl,
+                    self.be.average_price[self.op.single_token],
+                    self.be.position[self.op.single_token],
+                    self.be.eval.total_position_value
+                )
 
             case 2:
-                order = Order(side=-1, price=self.op.bid_fake, size=1, order_type="market")
-                self.be.check_orders(price=self.op.bid_fake, token=self.op.single_token, orders=[order])
+                order = Order(side=-1, price=self.op.pub_trade, size=100, order_type="market")
+                self.be.check_orders(price=self.op.pub_trade, token=self.op.single_token, orders=[order])
                 trade_signal = -1
+                print(
+                    self.op.raw_idx,
+                    "sell",
+                    self.price,
+                    self.op.pub_trade,
+                    self.be.eval.funds,
+                    self.be.eval.cumulative_pnl,
+                    self.be.average_price[self.op.single_token],
+                    self.be.position[self.op.single_token],
+                    self.be.eval.total_position_value
+                )
 
             case _:
                 self.be.check_orders(price=self.op.pub_trade, token=self.op.single_token)
@@ -318,6 +347,6 @@ class PricePercentChangeSamplingEnv(gym.Env):
         self.pos_value_rate = pos_value_rate
         self.current_pos_rate = current_pos_rate
 
-        reward = pnl_rate - 0.3 * pos_value_rate + 0.7 * current_pos_rate
+        reward = 5 * pnl_rate - 0.2 * pos_value_rate + 0.2 * current_pos_rate
         return scaled_sigmoid(reward, -2, 2) - 0.5
 

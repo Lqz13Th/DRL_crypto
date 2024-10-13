@@ -119,7 +119,7 @@ class ResearchEngine(BacktestEngine):
             # print(obs, rewards, i, max_steps)
 
             price = infos['price']
-            print(ppo_action, self.eval.total_position, self.position[token])
+            print(ppo_action, self.eval.total_position_value, self.position[token])
             match infos['trade_signal']:
                 case 1:
                     order = Order(side=1, price=price, size=1, order_type="market")

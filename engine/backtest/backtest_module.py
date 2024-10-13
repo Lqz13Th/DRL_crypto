@@ -61,7 +61,7 @@ class BacktestEngine:
 
         match self.side[token]:
             case 1:
-                if self.eval.total_position_value < self.eval.funds:
+                if abs(self.eval.total_position_value) < self.eval.funds - order.size * order.price:
                     self.position[token] += order.size
                     self._calculate_average_price(
                         filled_size=order.size,
@@ -73,10 +73,11 @@ class BacktestEngine:
                     print("Insufficient margin", self.eval.total_position_value, self.eval.funds)
 
             case -1:
-                filled_size = min(self.position[token], order.size)
+                filled_size = min(abs(self.position[token]), order.size)
                 cms = self.taker_commission if order.order_type == "market" else self.maker_commission
                 cash_pnl = filled_size * (self.average_price[token] - order.price) - filled_size * cms * 2
-                if filled_size == self.position[token]:
+                print(self.position[token], filled_size, order.size)
+                if filled_size >= abs(self.position[token]):
                     self.token_default(token)
 
                 else:
@@ -96,13 +97,13 @@ class BacktestEngine:
                 pass
 
     def _adjust_order_sell_fills(self, order: Order, token: str):
-        self.eval.total_position = sum(
+        self.eval.total_position_value = sum(
             self.position[key] * self.average_price[key] for key in self.position.keys()
         )
 
         match self.side[token]:
             case -1:
-                if self.eval.total_position < self.eval.funds:
+                if abs(self.eval.total_position_value) < self.eval.funds - order.size * order.price:
                     self.position[token] -= order.size
                     self._calculate_average_price(
                         filled_size=order.size,
@@ -111,13 +112,15 @@ class BacktestEngine:
                     )
 
                 else:
-                    print("Insufficient margin", self.eval.total_position, self.eval.funds)
+                    print("Insufficient margin", self.eval.total_position_value, self.eval.funds)
 
             case 1:
-                filled_size = min(self.position[token], order.size)
+                filled_size = min(abs(self.position[token]), order.size)
                 cms = self.taker_commission if order.order_type == "market" else self.maker_commission
                 cash_pnl = filled_size * (order.price - self.average_price[token]) - filled_size * cms * 2
-                if filled_size == self.position[token]:
+                print(self.position[token], filled_size, order.size)
+
+                if filled_size >= abs(self.position[token]):
                     self.token_default(token)
 
                 else:
@@ -137,5 +140,5 @@ class BacktestEngine:
                 pass
 
     def _calculate_average_price(self, filled_size: float, price: float, token: str):
-        self.average_price[token] = (self.average_price[token] * (self.position[token] - filled_size)
-                                     + price * filled_size) / self.position[token]
+        self.average_price[token] = (self.average_price[token] * (abs(self.position[token]) - filled_size)
+                                     + price * filled_size) / abs(self.position[token])
