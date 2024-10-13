@@ -347,6 +347,6 @@ class PricePercentChangeSamplingEnv(gym.Env):
         self.pos_value_rate = pos_value_rate
         self.current_pos_rate = current_pos_rate
 
-        reward = 5 * pnl_rate - 0.2 * pos_value_rate + 0.2 * current_pos_rate
+        reward = 5 * pnl_rate - 8 * pos_value_rate + 0.2 * current_pos_rate
         return scaled_sigmoid(reward, -2, 2) - 0.5
 
