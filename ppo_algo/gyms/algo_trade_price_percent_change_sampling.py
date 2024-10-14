@@ -26,7 +26,9 @@ class ObservationSpaceParser:
         # indexes utils
         self.raw_idx = 0
         self.raw_idx_max = data_frame.index.max()
-        self.raw_idx_max_train = int(self.raw_idx_max * 0.1)
+        self.raw_idx_max_train = int(self.raw_idx_max * 0.05)
+
+        self.features_update_idx = 0
         # ===================================================================
         # generate from histo data or fetch from live data
         self.pub_trade = 0
@@ -50,6 +52,7 @@ class ObservationSpaceParser:
             self,
     ):
         self.raw_idx += 1
+        self.features_update_idx = self.raw_idx
         px = self.raw_df.iloc[self.raw_idx]["price"]
         sz = self.raw_df.iloc[self.raw_idx]["quantity"]
         ts = self.raw_df.iloc[self.raw_idx]["transact_time"]
@@ -185,9 +188,9 @@ class PricePercentChangeSamplingEnv(gym.Env):
             'is_buyer_maker',
         ]), "DataFrame lack of columns"
 
-        self.action_space = spaces.Discrete(3)
+        self.action_space = spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32)
 
-        # multi modal tensorboard --logdir=examples/train/TPPCS_tensorboard/
+        # multi modal | tensorboard --logdir=examples/train/TPPCS_tensorboard/
         self.observation_space = spaces.Dict({
             "pub_price": spaces.Box(low=-np.inf, high=np.inf, shape=(3,), dtype=np.float64),
             "features": spaces.Box(low=0, high=1, shape=(rolling_window, numb_features), dtype=np.float32),
@@ -286,37 +289,71 @@ class PricePercentChangeSamplingEnv(gym.Env):
     def _take_action(self, action):
         trade_signal = 0
         match action:
-            case 1:
-                order = Order(side=1, price=self.op.pub_trade, size=100, order_type="market")
-                self.be.check_orders(price=self.op.pub_trade, token=self.op.single_token, orders=[order])
-                trade_signal = 1
-                print(
-                    self.op.raw_idx,
-                    "buy",
-                    self.price,
-                    self.op.pub_trade,
-                    self.be.eval.funds,
-                    self.be.eval.cumulative_pnl,
-                    self.be.average_price[self.op.single_token],
-                    self.be.position[self.op.single_token],
-                    self.be.eval.total_position_value
-                )
+            case action if action > 0.8:
+                if self.be.side == -1:
+                    order = Order(side=1, price=self.op.pub_trade, size=50, order_type="market")
+                    self.be.check_orders(price=self.op.pub_trade, token=self.op.single_token, orders=[order])
+                    trade_signal = 1
+                    # print(
+                    #     self.op.raw_idx,
+                    #     "buy",
+                    #     self.price,
+                    #     self.op.pub_trade,
+                    #     self.be.eval.funds,
+                    #     self.be.eval.cumulative_pnl,
+                    #     self.be.average_price[self.op.single_token],
+                    #     self.be.position[self.op.single_token],
+                    #     self.be.eval.total_position_value
+                    # )
 
-            case 2:
-                order = Order(side=-1, price=self.op.pub_trade, size=100, order_type="market")
-                self.be.check_orders(price=self.op.pub_trade, token=self.op.single_token, orders=[order])
-                trade_signal = -1
-                print(
-                    self.op.raw_idx,
-                    "sell",
-                    self.price,
-                    self.op.pub_trade,
-                    self.be.eval.funds,
-                    self.be.eval.cumulative_pnl,
-                    self.be.average_price[self.op.single_token],
-                    self.be.position[self.op.single_token],
-                    self.be.eval.total_position_value
-                )
+                elif self.op.raw_idx == self.op.features_update_idx:
+                    order = Order(side=1, price=self.op.pub_trade, size=50, order_type="market")
+                    self.be.check_orders(price=self.op.pub_trade, token=self.op.single_token, orders=[order])
+                    trade_signal = 1
+                    # print(
+                    #     self.op.raw_idx,
+                    #     "buy",
+                    #     self.price,
+                    #     self.op.pub_trade,
+                    #     self.be.eval.funds,
+                    #     self.be.eval.cumulative_pnl,
+                    #     self.be.average_price[self.op.single_token],
+                    #     self.be.position[self.op.single_token],
+                    #     self.be.eval.total_position_value
+                    # )
+
+            case action if action < 0.2:
+                if self.be.side == 1:
+                    order = Order(side=-1, price=self.op.pub_trade, size=50, order_type="market")
+                    self.be.check_orders(price=self.op.pub_trade, token=self.op.single_token, orders=[order])
+                    trade_signal = -1
+                    # print(
+                    #     self.op.raw_idx,
+                    #     "sell",
+                    #     self.price,
+                    #     self.op.pub_trade,
+                    #     self.be.eval.funds,
+                    #     self.be.eval.cumulative_pnl,
+                    #     self.be.average_price[self.op.single_token],
+                    #     self.be.position[self.op.single_token],
+                    #     self.be.eval.total_position_value
+                    # )
+
+                elif self.op.raw_idx == self.op.features_update_idx:
+                    order = Order(side=-1, price=self.op.pub_trade, size=50, order_type="market")
+                    self.be.check_orders(price=self.op.pub_trade, token=self.op.single_token, orders=[order])
+                    trade_signal = -1
+                    # print(
+                    #     self.op.raw_idx,
+                    #     "sell",
+                    #     self.price,
+                    #     self.op.pub_trade,
+                    #     self.be.eval.funds,
+                    #     self.be.eval.cumulative_pnl,
+                    #     self.be.average_price[self.op.single_token],
+                    #     self.be.position[self.op.single_token],
+                    #     self.be.eval.total_position_value
+                    # )
 
             case _:
                 self.be.check_orders(price=self.op.pub_trade, token=self.op.single_token)
@@ -330,7 +367,9 @@ class PricePercentChangeSamplingEnv(gym.Env):
         current_price = self.op.pub_trade
 
         pnl_rate = pnl / self.be.eval.funds
-        pos_value_rate = abs(pos_value) / self.be.eval.funds
+        pos_value_rate = pos_value / self.be.eval.funds
+        abs_pos_value_rate = abs(pos_value_rate)
+
         current_pos_rate = 0
 
         match self.be.side[self.op.single_token]:
@@ -347,6 +386,8 @@ class PricePercentChangeSamplingEnv(gym.Env):
         self.pos_value_rate = pos_value_rate
         self.current_pos_rate = current_pos_rate
 
-        reward = 5 * pnl_rate - 8 * pos_value_rate + 0.2 * current_pos_rate
+        penalty = -abs_pos_value_rate if abs_pos_value_rate > 0.6 else 0
+
+        reward = 0.2 * current_pos_rate - 0.6 * abs_pos_value_rate + 0.1 * pnl_rate + penalty
         return scaled_sigmoid(reward, -2, 2) - 0.5
 

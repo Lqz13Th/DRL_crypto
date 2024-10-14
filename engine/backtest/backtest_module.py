@@ -76,7 +76,7 @@ class BacktestEngine:
                 filled_size = min(abs(self.position[token]), order.size)
                 cms = self.taker_commission if order.order_type == "market" else self.maker_commission
                 cash_pnl = filled_size * (self.average_price[token] - order.price) - filled_size * cms * 2
-                print(self.position[token], filled_size, order.size)
+
                 if filled_size >= abs(self.position[token]):
                     self.token_default(token)
 
@@ -118,7 +118,6 @@ class BacktestEngine:
                 filled_size = min(abs(self.position[token]), order.size)
                 cms = self.taker_commission if order.order_type == "market" else self.maker_commission
                 cash_pnl = filled_size * (order.price - self.average_price[token]) - filled_size * cms * 2
-                print(self.position[token], filled_size, order.size)
 
                 if filled_size >= abs(self.position[token]):
                     self.token_default(token)
