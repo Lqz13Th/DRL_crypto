@@ -52,7 +52,6 @@ class ObservationSpaceParser:
             self,
     ):
         self.raw_idx += 1
-        self.features_update_idx = self.raw_idx
         px = self.raw_df.iloc[self.raw_idx]["price"]
         sz = self.raw_df.iloc[self.raw_idx]["quantity"]
         ts = self.raw_df.iloc[self.raw_idx]["transact_time"]
@@ -70,6 +69,8 @@ class ObservationSpaceParser:
             self.bid_fake = px
 
         if abs(px_pct) > self.price_threshold:
+            self.features_update_idx = self.raw_idx
+
             ts_duration = ts - self.last_ts
 
             bar = {
@@ -288,8 +289,17 @@ class PricePercentChangeSamplingEnv(gym.Env):
 
     def _take_action(self, action):
         trade_signal = 0
-        match action:
-            case action if action > 0.8:
+        # print(
+        #     self.op.raw_idx,
+        #     action[0],
+        #     self.be.eval.funds,
+        #     self.be.eval.cumulative_pnl,
+        #     self.be.average_price[self.op.single_token],
+        #     self.be.position[self.op.single_token],
+        #     self.be.eval.total_position_value
+        # )
+        match action[0]:
+            case action if action > 0.6:
                 if self.be.side == -1:
                     order = Order(side=1, price=self.op.pub_trade, size=50, order_type="market")
                     self.be.check_orders(price=self.op.pub_trade, token=self.op.single_token, orders=[order])
@@ -322,7 +332,7 @@ class PricePercentChangeSamplingEnv(gym.Env):
                     #     self.be.eval.total_position_value
                     # )
 
-            case action if action < 0.2:
+            case action if action < 0.4:
                 if self.be.side == 1:
                     order = Order(side=-1, price=self.op.pub_trade, size=50, order_type="market")
                     self.be.check_orders(price=self.op.pub_trade, token=self.op.single_token, orders=[order])
@@ -388,6 +398,6 @@ class PricePercentChangeSamplingEnv(gym.Env):
 
         penalty = -abs_pos_value_rate if abs_pos_value_rate > 0.6 else 0
 
-        reward = 0.2 * current_pos_rate - 0.6 * abs_pos_value_rate + 0.1 * pnl_rate + penalty
+        reward = 5 * current_pos_rate - 0.1 * abs_pos_value_rate + 0.1 * pnl_rate
         return scaled_sigmoid(reward, -2, 2) - 0.5
 

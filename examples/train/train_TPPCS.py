@@ -29,7 +29,7 @@ if __name__ == '__main__':
         policy="MultiInputPolicy",
         verbose=2,
         learning_rate=3e-4,
-        n_steps=256,
+        n_steps=128,
         # Number of steps to collect in each environment before updating
         batch_size=32,  # Batch size used for optimization
         n_epochs=10,
@@ -37,14 +37,14 @@ if __name__ == '__main__':
         clip_range=0.2,
         clip_range_vf=None,
         normalize_advantage=True,
-        ent_coef=0.01,
+        ent_coef=0.0,
         vf_coef=0.5,
         max_grad_norm=0.5,
         use_sde=False,  # False for discrete actions
         sde_sample_freq=-1,
         target_kl=None,
         stats_window_size=100,
-        seed=1,
+        seed=13,
         device="auto",
         tensorboard_log="./TPPCS_tensorboard/",
     ).model_learn(

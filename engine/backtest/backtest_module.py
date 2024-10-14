@@ -22,6 +22,7 @@ class BacktestEngine:
 
     def check_orders(self, price: float, token: str, orders=None):
         self._check_limit_order_status(price, token)
+        self.update_pos_value()
 
         if orders:
             for order in orders:
@@ -34,6 +35,11 @@ class BacktestEngine:
 
                     case "market" if order.side == -1:
                         self._adjust_order_sell_fills(order, token)
+
+    def update_pos_value(self):
+        self.eval.total_position_value = sum(
+            self.position[key] * self.average_price[key] for key in self.position.keys()
+        )
 
     def _check_limit_order_status(self, price: float, token: str):
         for order in self.open_orders[token]:
@@ -55,10 +61,6 @@ class BacktestEngine:
                         pass
 
     def _adjust_order_buy_fills(self, order: Order, token: str):
-        self.eval.total_position_value = sum(
-            self.position[key] * self.average_price[key] for key in self.position.keys()
-        )
-
         match self.side[token]:
             case 1:
                 if abs(self.eval.total_position_value) < self.eval.funds - order.size * order.price:
@@ -69,8 +71,8 @@ class BacktestEngine:
                         token=token,
                     )
 
-                else:
-                    print("Insufficient margin", self.eval.total_position_value, self.eval.funds)
+                # else:
+                #     print("Insufficient margin", self.eval.total_position_value, self.eval.funds)
 
             case -1:
                 filled_size = min(abs(self.position[token]), order.size)
@@ -97,10 +99,6 @@ class BacktestEngine:
                 pass
 
     def _adjust_order_sell_fills(self, order: Order, token: str):
-        self.eval.total_position_value = sum(
-            self.position[key] * self.average_price[key] for key in self.position.keys()
-        )
-
         match self.side[token]:
             case -1:
                 if abs(self.eval.total_position_value) < self.eval.funds - order.size * order.price:
@@ -111,8 +109,8 @@ class BacktestEngine:
                         token=token,
                     )
 
-                else:
-                    print("Insufficient margin", self.eval.total_position_value, self.eval.funds)
+                # else:
+                #     print("Insufficient margin", self.eval.total_position_value, self.eval.funds)
 
             case 1:
                 filled_size = min(abs(self.position[token]), order.size)
