@@ -22,7 +22,6 @@ class BacktestEngine:
 
     def check_orders(self, price: float, token: str, orders=None):
         self._check_limit_order_status(price, token)
-        self.update_pos_value()
 
         if orders:
             for order in orders:
@@ -61,6 +60,8 @@ class BacktestEngine:
                         pass
 
     def _adjust_order_buy_fills(self, order: Order, token: str):
+        self.update_pos_value()
+
         match self.side[token]:
             case 1:
                 if abs(self.eval.total_position_value) < self.eval.funds - order.size * order.price:
@@ -98,7 +99,11 @@ class BacktestEngine:
             case _:
                 pass
 
+        self.update_pos_value()
+
     def _adjust_order_sell_fills(self, order: Order, token: str):
+        self.update_pos_value()
+
         match self.side[token]:
             case -1:
                 if abs(self.eval.total_position_value) < self.eval.funds - order.size * order.price:
@@ -135,6 +140,8 @@ class BacktestEngine:
 
             case _:
                 pass
+
+        self.update_pos_value()
 
     def _calculate_average_price(self, filled_size: float, price: float, token: str):
         self.average_price[token] = (self.average_price[token] * (abs(self.position[token]) - filled_size)
