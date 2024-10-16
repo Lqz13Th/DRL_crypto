@@ -17,7 +17,9 @@ if __name__ == '__main__':
     pd.set_option("expand_frame_repr", False)
 
     psd = ParseHFTData()
-    df = psd.parse_agg_trade_data_binance("C:/Work Files/data/backtest/aggtrade/FILUSDT/FILUSDT-aggTrades-2024-04.csv")
+    df = psd.parse_agg_trade_data_binance(
+        "/home/pcone/drl_crypto/DRL_crypto/binance-futures_trades_2024-08-05_FILUSDT.csv.gz"
+    )
 
     print(df)
 
