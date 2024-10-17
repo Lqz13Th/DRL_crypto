@@ -53,9 +53,9 @@ class ObservationSpaceParser:
     ):
         self.raw_idx += 1
         px = self.raw_df.iloc[self.raw_idx]["price"]
-        sz = self.raw_df.iloc[self.raw_idx]["quantity"]
-        ts = self.raw_df.iloc[self.raw_idx]["transact_time"]
-        side = -1 if self.raw_df.iloc[self.raw_idx]["is_buyer_maker"] else 1  # 卖方主导为 -1，买方主导为 1
+        sz = self.raw_df.iloc[self.raw_idx]["amount"]
+        ts = self.raw_df.iloc[self.raw_idx]["timestamp"]
+        side = -1 if self.raw_df.iloc[self.raw_idx]["side"] == 'sell' else 1  # 卖方主导为 -1，买方主导为 1
 
         px_pct = (px - self.last_px) / self.last_px
 
@@ -99,7 +99,7 @@ class ObservationSpaceParser:
             self,
     ) -> pd.DataFrame:
         self.last_px = self.raw_df.iloc[self.raw_idx]["price"]
-        self.last_ts = self.raw_df.iloc[self.raw_idx]["transact_time"]
+        self.last_ts = self.raw_df.iloc[self.raw_idx]["amount"]
 
         bars = []
 
@@ -108,9 +108,9 @@ class ObservationSpaceParser:
         print(self.rolling_window, self.rolling_normalize_window, self.price_threshold)
         while features_idx < self.rolling_window + self.rolling_normalize_window:
             px = self.raw_df.iloc[self.raw_idx]["price"]
-            sz = self.raw_df.iloc[self.raw_idx]["quantity"]
-            ts = self.raw_df.iloc[self.raw_idx]["transact_time"]
-            side = -1 if self.raw_df.iloc[self.raw_idx]["is_buyer_maker"] else 1  # 卖方主导为 -1，买方主导为 1
+            sz = self.raw_df.iloc[self.raw_idx]["amount"]
+            ts = self.raw_df.iloc[self.raw_idx]["amount"]
+            side = -1 if self.raw_df.iloc[self.raw_idx]["side"] == 'sell' else 1  # 卖方主导为 -1，买方主导为 1
 
             self.raw_idx += 1
 
