@@ -12,7 +12,7 @@ if __name__ == '__main__':
     pd.set_option("expand_frame_repr", False)
 
     psd = high_frequency_data_parser.ParseHFTData()
-    df = psd.parse_agg_trade_data_binance("C:/Work Files/data/backtest/aggtrade/FILUSDT/FILUSDT-aggTrades-2024-04.csv")
+    df = psd.parse_trade_data_tardis("/home/pcone/drl_crypto/datasets/binance-futures_trades_2024-08-05_FILUSDT.csv.gz")
 
     max_steps = df.index.max()
     print(df)
