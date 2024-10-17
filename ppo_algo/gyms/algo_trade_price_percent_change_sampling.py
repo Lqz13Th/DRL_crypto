@@ -184,9 +184,9 @@ class PricePercentChangeSamplingEnv(gym.Env):
 
         assert all(col in self.raw_df.columns for col in [
             'price',
-            'quantity',
-            'transact_time',
-            'is_buyer_maker',
+            'amount',
+            'timestamp',
+            'side',
         ]), "DataFrame lack of columns"
 
         self.action_space = spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32)
