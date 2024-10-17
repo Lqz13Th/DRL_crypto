@@ -54,4 +54,4 @@ if __name__ == '__main__':
         path="TPPCS",
     ).model_load(
         path="TPPCS",
-    ).run()
+    ).run(token='FIL-USDT')
