@@ -7,9 +7,9 @@ class TensorboardCallback(BaseCallback):
 
     def _on_step(self) -> bool:
         reward = self.locals['rewards'][0]
-        price = self.training_env.get_attr("price")[0]
-        pnl_rate = self.training_env.get_attr("pnl_rate")[0]
-        pos_value_rate = self.training_env.get_attr("pos_value_rate")[0]
+        price = self.training_env.unwrapped.get_attr("price")[0]
+        pnl_rate = self.training_env.unwrapped.get_attr("pnl_rate")[0]
+        pos_value_rate = self.training_env.unwrapped.get_attr("pos_value_rate")[0]
 
         self.logger.record('train/reward', reward)
         self.logger.record('train/price', price)
