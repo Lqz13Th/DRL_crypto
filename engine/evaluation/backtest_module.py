@@ -1,24 +1,27 @@
-from engine.backtest.account_evaluation_module import EvaluationEngine
-from engine.backtest.order_module import Order
+from engine.evaluation.performance_evaluation_module import EvaluationEngine
+from engine.evaluation.order_module import Order
 
 
-class BacktestEngine:
-    def __init__(self):
-        self.eval = EvaluationEngine(fund=10000)
+class MatchEngine(EvaluationEngine):
+    def __init__(
+            self,
+            tokens=None,
+            funds=10000,
+            maker_commission=0.0002,
+            taker_commission=0.0005,
+            debug=False
+    ):
+        super().__init__(funds)
+        if tokens is None:
+            tokens = ["FIL-USDT"]
 
-        self.average_price = {}
-        self.open_orders = {}
-        self.position = {}
-        self.side = {}
+        for token in tokens:
+            self.token_default(token)
 
-        self.maker_commission = 0.0002
-        self.taker_commission = 0.0005
+        self.debug = debug
 
-    def token_default(self, token: str):
-        self.average_price[token] = 0
-        self.open_orders[token] = []
-        self.position[token] = 0
-        self.side[token] = 0
+        self.maker_commission = maker_commission
+        self.taker_commission = taker_commission
 
     def check_orders(self, price: float, token: str, orders=None):
         self._check_limit_order_status(price, token)
@@ -36,9 +39,13 @@ class BacktestEngine:
                         self._adjust_order_sell_fills(order, token)
 
     def update_pos_value(self):
-        self.eval.total_position_value = sum(
+        self.cumulative_pos_value = sum(
             self.position[key] * self.average_price[key] for key in self.position.keys()
         )
+
+    def _calculate_average_price(self, filled_size: float, price: float, token: str):
+        self.average_price[token] = (self.average_price[token] * (abs(self.position[token]) - filled_size)
+                                     + price * filled_size) / abs(self.position[token])
 
     def _check_limit_order_status(self, price: float, token: str):
         for order in self.open_orders[token]:
@@ -64,7 +71,7 @@ class BacktestEngine:
 
         match self.side[token]:
             case 1:
-                if abs(self.eval.total_position_value) < self.eval.funds - order.size * order.price:
+                if abs(self.cumulative_pos_value) < self.funds - order.size * order.price:
                     self.position[token] += order.size
                     self._calculate_average_price(
                         filled_size=order.size,
@@ -72,8 +79,8 @@ class BacktestEngine:
                         token=token,
                     )
 
-                # else:
-                #     print("Insufficient margin", self.eval.total_position_value, self.eval.funds)
+                elif self.debug:
+                    print("Insufficient margin", self.cumulative_pos_value, self.funds)
 
             case -1:
                 filled_size = min(abs(self.position[token]), order.size)
@@ -86,7 +93,7 @@ class BacktestEngine:
                 else:
                     self.position[token] += filled_size
 
-                self.eval.update(
+                self.update(
                     price=order.price,
                     pnl=cash_pnl,
                 )
@@ -106,7 +113,7 @@ class BacktestEngine:
 
         match self.side[token]:
             case -1:
-                if abs(self.eval.total_position_value) < self.eval.funds - order.size * order.price:
+                if abs(self.cumulative_pos_value) < self.funds - order.size * order.price:
                     self.position[token] -= order.size
                     self._calculate_average_price(
                         filled_size=order.size,
@@ -114,8 +121,8 @@ class BacktestEngine:
                         token=token,
                     )
 
-                # else:
-                #     print("Insufficient margin", self.eval.total_position_value, self.eval.funds)
+                elif self.debug:
+                    print("Insufficient margin", self.cumulative_pos_value, self.funds)
 
             case 1:
                 filled_size = min(abs(self.position[token]), order.size)
@@ -128,7 +135,7 @@ class BacktestEngine:
                 else:
                     self.position[token] -= filled_size
 
-                self.eval.update(
+                self.update(
                     price=order.price,
                     pnl=cash_pnl,
                 )
@@ -142,7 +149,3 @@ class BacktestEngine:
                 pass
 
         self.update_pos_value()
-
-    def _calculate_average_price(self, filled_size: float, price: float, token: str):
-        self.average_price[token] = (self.average_price[token] * (abs(self.position[token]) - filled_size)
-                                     + price * filled_size) / abs(self.position[token])

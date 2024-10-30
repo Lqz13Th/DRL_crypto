@@ -1,16 +1,16 @@
 import matplotlib.pyplot as plt
+from engine.portfolio.account import AccountStatus
 
 
-class EvaluationEngine:
-    def __init__(self, fund: float):
+class EvaluationEngine(AccountStatus):
+    def __init__(self, funds: float):
+        super().__init__(funds)
         self.fund_history = []
         self.price_history = []
         self.position_history = []
 
         self.cumulative_pnl = 0
-        self.funds = fund
         self.max_drawdown = 0
-        self.total_position_value = 0
 
     def update(self, price: float, pnl: float):
         self.cumulative_pnl += pnl
@@ -18,7 +18,7 @@ class EvaluationEngine:
 
         self.price_history.append(price)
         self.fund_history.append(self.funds)
-        self.position_history.append(self.total_position_value)
+        self.position_history.append(self.cumulative_pos_value)
 
     def calculate_max_drawdown(self):
         peak = self.fund_history[0]

@@ -4,8 +4,8 @@ import pandas as pd
 
 from gymnasium import spaces
 
-from engine.backtest.order_module import Order
-from engine.backtest.backtest_module import BacktestEngine
+from engine.evaluation.order_module import Order
+from engine.evaluation.backtest_module import MatchEngine
 from utils.price_percent_change_bar import rolling_normalize_data
 from utils.price_percent_change_bar import scaled_sigmoid
 
@@ -172,7 +172,7 @@ class PricePercentChangeSamplingEnv(gym.Env):
     ):
         super(PricePercentChangeSamplingEnv, self).__init__()
         self.op = ObservationSpaceParser(data_frame, rolling_window, rolling_normalize_window, single_token)
-        self.be = BacktestEngine()
+        self.be = MatchEngine()
         self.be.token_default(single_token)
 
         self.raw_df = data_frame
@@ -246,7 +246,7 @@ class PricePercentChangeSamplingEnv(gym.Env):
         reward = self._calculate_reward()
 
         terminated = False
-        if options == "backtest":
+        if options == "evaluation":
             if self.op.raw_idx >= self.op.raw_idx_max:
                 terminated = True
                 print("dddddddddddddddddddoneeeeeeee", self.be.eval.funds)

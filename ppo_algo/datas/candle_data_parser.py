@@ -18,6 +18,6 @@ if __name__ == '__main__':
     pd.set_option("expand_frame_repr", False)
 
     psd = ParseCandleData()
-    df = psd.parse_candle_data_okx('C:/Work Files/data/backtest/candle/candle1m/FIL-USDT1min.csv')
+    df = psd.parse_candle_data_okx('C:/Work Files/data/evaluation/candle/candle1m/FIL-USDT1min.csv')
     print(df)
 
