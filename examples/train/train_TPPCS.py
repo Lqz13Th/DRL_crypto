@@ -1,12 +1,13 @@
 import pandas as pd
+import os
 
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3 import PPO
 
-from engine.evaluation.backtest_module import MatchEngine
+from engine.evaluation.match_module import MatchEngine
 from engine.evaluation.order_module import Order
 from ppo_algo.datas import high_frequency_data_parser
-from ppo_algo.gyms.algo_trade_price_percent_change_sampling import PricePercentChangeSamplingEnv
+from ppo_algo.envs.algo_trade_price_percent_change_sampling import PricePercentChangeSamplingEnv
 from engine.callback import TensorboardCallback
 
 if __name__ == '__main__':
@@ -14,7 +15,9 @@ if __name__ == '__main__':
     pd.set_option("expand_frame_repr", False)
 
     psd = high_frequency_data_parser.ParseHFTData()
-    df = psd.parse_trade_data_tardis("/home/pcone/drl_crypto/datasets/binance-futures_trades_2024-08-05_FILUSDT.csv.gz")
+    df = psd.parse_trade_data_tardis(
+        "C:/Users/trade/PycharmProjects/DataGrabber/datasets/binance-futures_trades_2024-08-05_FILUSDT.csv.gz"
+    )
 
     print(df)
 
@@ -31,7 +34,7 @@ if __name__ == '__main__':
         n_steps=128,
         # Number of steps to collect in each environment before updating
         batch_size=64,  # Batch size used for optimization
-        n_epochs=10,
+        n_epochs=3,
         gamma=0.99,
         clip_range=0.2,
         clip_range_vf=None,
@@ -55,8 +58,9 @@ if __name__ == '__main__':
         path="ppo_crypto_trading",
     )
 
-    del model
+    del model, env
 
+    env = make_vec_env(lambda: PricePercentChangeSamplingEnv(df, token, mode='evaluation'), n_envs=1)
     model = PPO.load("ppo_crypto_trading")
     obs = env.reset()
     backtest = MatchEngine(debug=True)
@@ -67,7 +71,7 @@ if __name__ == '__main__':
         # print(obs, rewards, i, max_steps)
 
         price = infos['price']
-        print(ppo_action, backtest.cumulative_pos_value, backtest.position[token])
+        print(ppo_action, infos)
         match infos['trade_signal']:
             case 1:
                 order = Order(side=1, price=price, size=1, order_type="market")

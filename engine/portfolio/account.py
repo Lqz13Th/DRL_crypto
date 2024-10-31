@@ -1,6 +1,7 @@
 
 class AccountStatus:
     def __init__(self, funds: float):
+        self._init_funds = funds
         self.funds = funds
         self.cumulative_pos_value = 0
 
@@ -14,3 +15,12 @@ class AccountStatus:
         self.open_orders[token] = []
         self.position[token] = 0
         self.side[token] = 0
+
+    def account_default(self):
+        self.funds = self._init_funds
+        self.cumulative_pos_value = 0
+
+        self.average_price = {}
+        self.open_orders = {}
+        self.position = {}
+        self.side = {}

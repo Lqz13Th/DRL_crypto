@@ -12,6 +12,14 @@ class EvaluationEngine(AccountStatus):
         self.cumulative_pnl = 0
         self.max_drawdown = 0
 
+    def evaluation_default(self):
+        self.fund_history = []
+        self.price_history = []
+        self.position_history = []
+
+        self.cumulative_pnl = 0
+        self.max_drawdown = 0
+
     def update(self, price: float, pnl: float):
         self.cumulative_pnl += pnl
         self.funds += pnl
