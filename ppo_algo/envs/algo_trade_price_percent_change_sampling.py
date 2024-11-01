@@ -40,7 +40,7 @@ class PricePercentChangeSamplingEnv(gym.Env):
             'side',
         ]), "DataFrame lack of columns"
 
-        self.action_space = spaces.Discrete(3)
+        self.action_space = spaces.Discrete(5)
 
         # multi modal | tensorboard --logdir=examples/train/TPPCS_tensorboard/
         self.observation_space = spaces.Dict({
@@ -55,7 +55,7 @@ class PricePercentChangeSamplingEnv(gym.Env):
         self.pnl_rate = 0
         self.pos_value_rate = 0
         self.current_pos_rate = 0
-        self.op.features_update_idx = 0
+        self.op.features_update_sig = 0
 
         self.me.evaluation_default()
         self.me.account_default()
@@ -91,7 +91,7 @@ class PricePercentChangeSamplingEnv(gym.Env):
     def step(self, action_state):
         trade_signal = self._take_action(action_state)
 
-        reward = self._calculate_reward()
+        reward = self._calculate_reward(action_state)
 
         terminated = False
         if self.mode == "evaluation":
@@ -125,7 +125,7 @@ class PricePercentChangeSamplingEnv(gym.Env):
         ).tail(self.op.rolling_window).reset_index(drop=True)
 
         next_obs = {
-            "action_sig": 1 if self.op.raw_idx == self.op.features_update_idx else 0,
+            "action_sig": self.op.features_update_sig,
             "features": normalized_df.values.astype(np.float32),
             "account_states": np.array(
                 [
@@ -152,12 +152,12 @@ class PricePercentChangeSamplingEnv(gym.Env):
             self.me.position[self.op.single_token],
             self.me.cumulative_pos_value
         )
-        if self.op.raw_idx == self.op.features_update_idx:
+        if self.op.features_update_sig == 1:
             self.me.update_pos_value()
 
         match action:
-            case action if action == 2:
-                if self.me.side[self.op.single_token] == -1:
+            case 4:
+                if self.op.features_update_sig == 1:
                     order = Order(side=1, price=self.op.pub_trade, size=50, order_type="market")
                     self.me.check_orders(price=self.op.pub_trade, token=self.op.single_token, orders=[order])
                     trade_signal = 1
@@ -173,24 +173,8 @@ class PricePercentChangeSamplingEnv(gym.Env):
                         self.me.cumulative_pos_value
                     )
 
-                elif self.op.raw_idx == self.op.features_update_idx:
-                    order = Order(side=1, price=self.op.pub_trade, size=50, order_type="market")
-                    self.me.check_orders(price=self.op.pub_trade, token=self.op.single_token, orders=[order])
-                    trade_signal = 1
-                    print(
-                        self.op.raw_idx,
-                        "buy==",
-                        self.price,
-                        self.op.pub_trade,
-                        self.me.funds,
-                        self.me.cumulative_pnl,
-                        self.me.average_price[self.op.single_token],
-                        self.me.position[self.op.single_token],
-                        self.me.cumulative_pos_value
-                    )
-
-            case action if action == 1:
-                if self.me.side[self.op.single_token] == 1:
+            case 3:
+                if self.op.features_update_sig == 1:
                     order = Order(side=-1, price=self.op.pub_trade, size=50, order_type="market")
                     self.me.check_orders(price=self.op.pub_trade, token=self.op.single_token, orders=[order])
                     trade_signal = -1
@@ -206,7 +190,25 @@ class PricePercentChangeSamplingEnv(gym.Env):
                         self.me.cumulative_pos_value
                     )
 
-                elif self.op.raw_idx == self.op.features_update_idx:
+            case 2:
+                if self.me.side[self.op.single_token] != 0:
+                    order = Order(side=1, price=self.op.pub_trade, size=50, order_type="market")
+                    self.me.check_orders(price=self.op.pub_trade, token=self.op.single_token, orders=[order])
+                    trade_signal = 1
+                    print(
+                        self.op.raw_idx,
+                        "buy==",
+                        self.price,
+                        self.op.pub_trade,
+                        self.me.funds,
+                        self.me.cumulative_pnl,
+                        self.me.average_price[self.op.single_token],
+                        self.me.position[self.op.single_token],
+                        self.me.cumulative_pos_value
+                    )
+
+            case 1:
+                if self.me.side[self.op.single_token] != 0:
                     order = Order(side=-1, price=self.op.pub_trade, size=50, order_type="market")
                     self.me.check_orders(price=self.op.pub_trade, token=self.op.single_token, orders=[order])
                     trade_signal = -1
@@ -227,7 +229,7 @@ class PricePercentChangeSamplingEnv(gym.Env):
 
         return trade_signal
 
-    def _calculate_reward(self):
+    def _calculate_reward(self, action):
         pnl = self.me.cumulative_pnl
         pos_value = self.me.cumulative_pos_value
         avg_pos_price = self.me.average_price[self.op.single_token]
@@ -253,6 +255,7 @@ class PricePercentChangeSamplingEnv(gym.Env):
         self.pos_value_rate = pos_value_rate
         self.current_pos_rate = current_pos_rate
 
+        action_reward = -0.1 if self.op.features_update_sig == 0 and action != 0 else 0.1
         addition_reward = 0.2 * abs_pos_value_rate if 0.2 > abs_pos_value_rate >= 0.001 else 0
         penalty = -abs_pos_value_rate if abs_pos_value_rate > 0.6 else 0
 
@@ -260,7 +263,15 @@ class PricePercentChangeSamplingEnv(gym.Env):
         # Using cpu device
         # 9.972 0 1158147 5790735
         # 200 2000 0.001
-        reward = 5 * current_pos_rate - 0.2 * abs_pos_value_rate + 0.1 * pnl_rate + addition_reward + 0.5 * penalty
+        reward = (
+                + 10. * current_pos_rate
+                - 0.2 * abs_pos_value_rate
+                + 0.1 * pnl_rate
+                + 1. * addition_reward
+                + 0.5 * penalty
+                + 1. * action_reward
+        )
+
         return scaled_sigmoid(reward, -2, 2) - 0.5
 
 
@@ -276,13 +287,13 @@ class ObservationSpaceParser:
 
         self.raw_df = data_frame
 
-        self.price_threshold = 0.002
+        self.price_threshold = 0.001
         # indexes utils
         self.raw_idx = 0
         self.raw_idx_max = data_frame.index.max()
-        self.raw_idx_max_train = int(self.raw_idx_max * 0.2)
+        self.raw_idx_max_train = int(self.raw_idx_max * 0.1)
 
-        self.features_update_idx = 0
+        self.features_update_sig = 0
         # ===================================================================
         # generate from histo data or fetch from live data
         self.pub_trade = 0
@@ -323,7 +334,7 @@ class ObservationSpaceParser:
             self.bid_fake = px
 
         if abs(px_pct) > self.price_threshold:
-            self.features_update_idx = self.raw_idx
+            self.features_update_sig = 1
 
             ts_duration = ts - self.last_ts
 
@@ -349,11 +360,14 @@ class ObservationSpaceParser:
                 self.rolling_window + self.rolling_normalize_window
             )
 
+        else:
+            self.features_update_sig = 0
+
     def generate_px_pct_bar_on_reset(
             self,
     ) -> pd.DataFrame:
         self.last_px = self.raw_df.iloc[self.raw_idx]["price"]
-        self.last_ts = self.raw_df.iloc[self.raw_idx]["amount"]
+        self.last_ts = self.raw_df.iloc[self.raw_idx]["timestamp"]
 
         bars = []
 
@@ -363,7 +377,7 @@ class ObservationSpaceParser:
         while features_idx < self.rolling_window + self.rolling_normalize_window:
             px = self.raw_df.iloc[self.raw_idx]["price"]
             sz = self.raw_df.iloc[self.raw_idx]["amount"]
-            ts = self.raw_df.iloc[self.raw_idx]["amount"]
+            ts = self.raw_df.iloc[self.raw_idx]["timestamp"]
             side = -1 if self.raw_df.iloc[self.raw_idx]["side"] == 'sell' else 1  # 卖方主导为 -1，买方主导为 1
 
             self.raw_idx += 1
@@ -399,10 +413,7 @@ class ObservationSpaceParser:
                 features_idx += 1
 
         bars_df = pd.DataFrame(bars)
-        print(bars_df)
-
         bars_df = bars_df.dropna()
-        print(bars_df)
         return bars_df
 
     @staticmethod

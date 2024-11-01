@@ -1,5 +1,4 @@
 import pandas as pd
-import os
 
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3 import PPO
@@ -31,10 +30,10 @@ if __name__ == '__main__':
         env=env,
         verbose=2,
         learning_rate=3e-4,
-        n_steps=128,
+        n_steps=2048,
         # Number of steps to collect in each environment before updating
         batch_size=64,  # Batch size used for optimization
-        n_epochs=3,
+        n_epochs=10,
         gamma=0.99,
         clip_range=0.2,
         clip_range_vf=None,
@@ -53,7 +52,7 @@ if __name__ == '__main__':
 
     model.learn(
         total_timesteps=10**10,
-        callback=TensorboardCallback(),
+        callback=TensorboardCallback(target_episodes=10, verbose=1),
     ).save(
         path="ppo_crypto_trading",
     )
@@ -65,24 +64,23 @@ if __name__ == '__main__':
     obs = env.reset()
     backtest = MatchEngine(debug=True)
     backtest.token_default(token)
+    a = 0
     while True:
         ppo_action, _states = model.predict(obs, deterministic=False)
         obs, rewards, dones, infos = env.step(ppo_action)
-        # print(obs, rewards, i, max_steps)
 
-        price = infos['price']
-        print(ppo_action, infos)
-        match infos['trade_signal']:
+        price = infos[0]['price']
+        match infos[0]['trade_signal']:
             case 1:
-                order = Order(side=1, price=price, size=1, order_type="market")
-                backtest.check_orders(price=obs[0][3], token=token, orders=[order])
+                order = Order(side=1, price=price, size=50, order_type="market")
+                backtest.check_orders(price=price, token=token, orders=[order])
 
             case -1:
-                order = Order(side=-1, price=price, size=1, order_type="market")
-                backtest.check_orders(price=obs[0][3], token=token, orders=[order])
+                order = Order(side=-1, price=price, size=50, order_type="market")
+                backtest.check_orders(price=price, token=token, orders=[order])
 
             case _:
-                backtest.check_orders(price=obs[0][3], token=token)
+                backtest.check_orders(price=price, token=token)
 
         if dones[0]:
             break
