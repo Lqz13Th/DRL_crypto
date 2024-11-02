@@ -104,6 +104,11 @@ class PricePercentChangeSamplingEnv(gym.Env):
             terminated = True
             self.op.raw_idx = 0
 
+        elif self.me.funds < self.me.init_funds * 0.1:
+            terminated = True
+            reward = - 0.5
+            self.op.raw_idx = 0
+
         truncated = False
         self.op.generate_px_pct_bar_on_step()
 
@@ -315,7 +320,7 @@ class PricePercentChangeSamplingEnv(gym.Env):
         avg_pos_price = self.me.average_price[self.op.single_token]
         current_price = self.op.pub_trade
 
-        pnl_rate = pnl / self.me.funds
+        pnl_rate = pnl / self.me.init_funds
         pos_value_rate = pos_value / self.me.funds
         abs_pos_value_rate = abs(pos_value_rate)
 
@@ -353,7 +358,7 @@ class PricePercentChangeSamplingEnv(gym.Env):
                 + 1. * action_reward
         )
 
-        return scaled_sigmoid(reward, -2, 2) - 0.5
+        return scaled_sigmoid(reward, -3, 3) - 0.5
 
 
 class ObservationSpaceParser:

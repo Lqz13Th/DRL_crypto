@@ -6,7 +6,7 @@ from tqdm import tqdm
 def scaled_sigmoid(x: float, start: float, end: float) -> float:
     n = max(np.abs(start - end), 5e-3)
     exponent = -np.log(40_000) * (x - start - n) / n + np.log(5e-3)
-    exponent = np.clip(exponent, -20_000, 20_000)
+    exponent = max(np.clip(exponent, -200, 200), 5e-3)
     score = 2 / (1 + np.exp(exponent))
     return score / 2
 

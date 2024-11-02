@@ -42,7 +42,7 @@ if __name__ == '__main__':
         vf_coef=0.5,
         max_grad_norm=0.5,
         use_sde=True,  # False for discrete actions
-        sde_sample_freq=-1,
+        sde_sample_freq=200,
         target_kl=None,
         stats_window_size=100,
         seed=13,
