@@ -22,7 +22,7 @@ class PricePercentChangeSamplingEnv(gym.Env):
     ):
         super(PricePercentChangeSamplingEnv, self).__init__()
         self.op = ObservationSpaceParser(data_frame, rolling_window, rolling_normalize_window, single_token)
-        self.me = MatchEngine()
+        self.me = MatchEngine(debug=True)
         self.me.token_default(single_token)
 
         self.raw_df = data_frame
@@ -40,7 +40,7 @@ class PricePercentChangeSamplingEnv(gym.Env):
             'side',
         ]), "DataFrame lack of columns"
 
-        self.action_space = spaces.Discrete(5)
+        self.action_space = spaces.Box(low=-1, high=1, shape=(1,), dtype=np.float32)
 
         # multi modal | tensorboard --logdir=examples/train/TPPCS_tensorboard/
         self.observation_space = spaces.Dict({
@@ -89,7 +89,7 @@ class PricePercentChangeSamplingEnv(gym.Env):
         return init_obs, {}
 
     def step(self, action_state):
-        trade_signal = self._take_action(action_state)
+        self._take_action(action_state)
 
         reward = self._calculate_reward(action_state)
 
@@ -110,7 +110,6 @@ class PricePercentChangeSamplingEnv(gym.Env):
         next_obs = self._next_observation()
         infos = {
             "price": self.op.pub_trade,
-            "trade_signal": trade_signal,
         }
 
         self.price = self.op.pub_trade
@@ -141,93 +140,174 @@ class PricePercentChangeSamplingEnv(gym.Env):
         return next_obs
 
     def _take_action(self, action):
-        trade_signal = 0
         print(
             self.op.raw_idx,
-            action,
+            action[0],
             self.me.side[self.op.single_token],
             self.me.funds,
             self.me.cumulative_pnl,
             self.me.average_price[self.op.single_token],
+            self.price,
             self.me.position[self.op.single_token],
             self.me.cumulative_pos_value
         )
         if self.op.features_update_sig == 1:
+            print('==================================================================================================')
             self.me.update_pos_value()
 
-        match action:
-            case 4:
-                if self.op.features_update_sig == 1:
-                    order = Order(side=1, price=self.op.pub_trade, size=50, order_type="market")
-                    self.me.check_orders(price=self.op.pub_trade, token=self.op.single_token, orders=[order])
-                    trade_signal = 1
-                    print(
-                        self.op.raw_idx,
-                        "buy",
-                        self.price,
-                        self.op.pub_trade,
-                        self.me.funds,
-                        self.me.cumulative_pnl,
-                        self.me.average_price[self.op.single_token],
-                        self.me.position[self.op.single_token],
-                        self.me.cumulative_pos_value
-                    )
+        match action[0]:
+            case action if action >= 0.99:
+                order = Order(side=1, price=self.op.pub_trade, size=500, order_type="market")
+                self.me.check_orders(price=self.op.pub_trade, token=self.op.single_token, orders=[order])
+                print(
+                    self.op.raw_idx,
+                    "buy5",
+                    self.price,
+                    self.op.pub_trade,
+                    self.me.funds,
+                    self.me.cumulative_pnl,
+                    self.me.average_price[self.op.single_token],
+                    self.me.position[self.op.single_token],
+                    self.me.cumulative_pos_value
+                )
 
-            case 3:
-                if self.op.features_update_sig == 1:
-                    order = Order(side=-1, price=self.op.pub_trade, size=50, order_type="market")
-                    self.me.check_orders(price=self.op.pub_trade, token=self.op.single_token, orders=[order])
-                    trade_signal = -1
-                    print(
-                        self.op.raw_idx,
-                        "sell",
-                        self.price,
-                        self.op.pub_trade,
-                        self.me.funds,
-                        self.me.cumulative_pnl,
-                        self.me.average_price[self.op.single_token],
-                        self.me.position[self.op.single_token],
-                        self.me.cumulative_pos_value
-                    )
+            case action if 0.99 > action >= 0.8:
+                order = Order(side=1, price=self.op.pub_trade, size=200, order_type="market")
+                self.me.check_orders(price=self.op.pub_trade, token=self.op.single_token, orders=[order])
+                print(
+                    self.op.raw_idx,
+                    "buy4",
+                    self.price,
+                    self.op.pub_trade,
+                    self.me.funds,
+                    self.me.cumulative_pnl,
+                    self.me.average_price[self.op.single_token],
+                    self.me.position[self.op.single_token],
+                    self.me.cumulative_pos_value
+                )
 
-            case 2:
-                if self.me.side[self.op.single_token] != 0:
-                    order = Order(side=1, price=self.op.pub_trade, size=50, order_type="market")
-                    self.me.check_orders(price=self.op.pub_trade, token=self.op.single_token, orders=[order])
-                    trade_signal = 1
-                    print(
-                        self.op.raw_idx,
-                        "buy==",
-                        self.price,
-                        self.op.pub_trade,
-                        self.me.funds,
-                        self.me.cumulative_pnl,
-                        self.me.average_price[self.op.single_token],
-                        self.me.position[self.op.single_token],
-                        self.me.cumulative_pos_value
-                    )
+            case action if 0.8 > action >= 0.6:
+                order = Order(side=1, price=self.op.pub_trade, size=100, order_type="market")
+                self.me.check_orders(price=self.op.pub_trade, token=self.op.single_token, orders=[order])
+                print(
+                    self.op.raw_idx,
+                    "buy3",
+                    self.price,
+                    self.op.pub_trade,
+                    self.me.funds,
+                    self.me.cumulative_pnl,
+                    self.me.average_price[self.op.single_token],
+                    self.me.position[self.op.single_token],
+                    self.me.cumulative_pos_value
+                )
 
-            case 1:
-                if self.me.side[self.op.single_token] != 0:
-                    order = Order(side=-1, price=self.op.pub_trade, size=50, order_type="market")
-                    self.me.check_orders(price=self.op.pub_trade, token=self.op.single_token, orders=[order])
-                    trade_signal = -1
-                    print(
-                        self.op.raw_idx,
-                        "sell==",
-                        self.price,
-                        self.op.pub_trade,
-                        self.me.funds,
-                        self.me.cumulative_pnl,
-                        self.me.average_price[self.op.single_token],
-                        self.me.position[self.op.single_token],
-                        self.me.cumulative_pos_value
-                    )
+            case action if 0.6 > action >= 0.4:
+                order = Order(side=1, price=self.op.pub_trade, size=50, order_type="market")
+                self.me.check_orders(price=self.op.pub_trade, token=self.op.single_token, orders=[order])
+                print(
+                    self.op.raw_idx,
+                    "buy2",
+                    self.price,
+                    self.op.pub_trade,
+                    self.me.funds,
+                    self.me.cumulative_pnl,
+                    self.me.average_price[self.op.single_token],
+                    self.me.position[self.op.single_token],
+                    self.me.cumulative_pos_value
+                )
+
+            case action if 0.4 > action >= 0.2:
+                order = Order(side=1, price=self.op.pub_trade, size=10, order_type="market")
+                self.me.check_orders(price=self.op.pub_trade, token=self.op.single_token, orders=[order])
+                print(
+                    self.op.raw_idx,
+                    "buy1",
+                    self.price,
+                    self.op.pub_trade,
+                    self.me.funds,
+                    self.me.cumulative_pnl,
+                    self.me.average_price[self.op.single_token],
+                    self.me.position[self.op.single_token],
+                    self.me.cumulative_pos_value
+                )
+
+            case action if action <= -0.99:
+                order = Order(side=-1, price=self.op.pub_trade, size=500, order_type="market")
+                self.me.check_orders(price=self.op.pub_trade, token=self.op.single_token, orders=[order])
+                print(
+                    self.op.raw_idx,
+                    "sell5",
+                    self.price,
+                    self.op.pub_trade,
+                    self.me.funds,
+                    self.me.cumulative_pnl,
+                    self.me.average_price[self.op.single_token],
+                    self.me.position[self.op.single_token],
+                    self.me.cumulative_pos_value
+                )
+
+            case action if -0.99 < action <= -0.8:
+                order = Order(side=-1, price=self.op.pub_trade, size=200, order_type="market")
+                self.me.check_orders(price=self.op.pub_trade, token=self.op.single_token, orders=[order])
+                print(
+                    self.op.raw_idx,
+                    "sell4",
+                    self.price,
+                    self.op.pub_trade,
+                    self.me.funds,
+                    self.me.cumulative_pnl,
+                    self.me.average_price[self.op.single_token],
+                    self.me.position[self.op.single_token],
+                    self.me.cumulative_pos_value
+                )
+
+            case action if -0.8 < action <= -0.6:
+                order = Order(side=-1, price=self.op.pub_trade, size=100, order_type="market")
+                self.me.check_orders(price=self.op.pub_trade, token=self.op.single_token, orders=[order])
+                print(
+                    self.op.raw_idx,
+                    "sell3",
+                    self.price,
+                    self.op.pub_trade,
+                    self.me.funds,
+                    self.me.cumulative_pnl,
+                    self.me.average_price[self.op.single_token],
+                    self.me.position[self.op.single_token],
+                    self.me.cumulative_pos_value
+                )
+
+            case action if -0.6 < action <= -0.4:
+                order = Order(side=-1, price=self.op.pub_trade, size=50, order_type="market")
+                self.me.check_orders(price=self.op.pub_trade, token=self.op.single_token, orders=[order])
+                print(
+                    self.op.raw_idx,
+                    "sell2",
+                    self.price,
+                    self.op.pub_trade,
+                    self.me.funds,
+                    self.me.cumulative_pnl,
+                    self.me.average_price[self.op.single_token],
+                    self.me.position[self.op.single_token],
+                    self.me.cumulative_pos_value
+                )
+
+            case action if -0.4 < action <= -0.2:
+                order = Order(side=-1, price=self.op.pub_trade, size=10, order_type="market")
+                self.me.check_orders(price=self.op.pub_trade, token=self.op.single_token, orders=[order])
+                print(
+                    self.op.raw_idx,
+                    "sell1",
+                    self.price,
+                    self.op.pub_trade,
+                    self.me.funds,
+                    self.me.cumulative_pnl,
+                    self.me.average_price[self.op.single_token],
+                    self.me.position[self.op.single_token],
+                    self.me.cumulative_pos_value
+                )
 
             case _:
                 self.me.check_orders(price=self.op.pub_trade, token=self.op.single_token)
-
-        return trade_signal
 
     def _calculate_reward(self, action):
         pnl = self.me.cumulative_pnl
@@ -255,20 +335,21 @@ class PricePercentChangeSamplingEnv(gym.Env):
         self.pos_value_rate = pos_value_rate
         self.current_pos_rate = current_pos_rate
 
-        action_reward = -0.1 if self.op.features_update_sig == 0 and action != 0 else 0.1
-        addition_reward = 0.2 * abs_pos_value_rate if 0.2 > abs_pos_value_rate >= 0.001 else 0
-        penalty = -abs_pos_value_rate if abs_pos_value_rate > 0.6 else 0
+        action_reward = -abs(action) if self.op.features_update_sig == 0 and (
+                action > 0.2 or action < -0.2
+        ) else 0.2 - abs(action)
+
+        addition_reward = abs_pos_value_rate if 0.2 > abs_pos_value_rate >= 0.001 else 0
 
         # [5790736 rows x 4 columns]
         # Using cpu device
         # 9.972 0 1158147 5790735
         # 200 2000 0.001
         reward = (
-                + 10. * current_pos_rate
-                - 0.2 * abs_pos_value_rate
-                + 0.1 * pnl_rate
-                + 1. * addition_reward
-                + 0.5 * penalty
+                + 50. * current_pos_rate
+                - 1. * abs_pos_value_rate
+                + 10. * pnl_rate
+                + 4. * addition_reward
                 + 1. * action_reward
         )
 
@@ -291,7 +372,7 @@ class ObservationSpaceParser:
         # indexes utils
         self.raw_idx = 0
         self.raw_idx_max = data_frame.index.max()
-        self.raw_idx_max_train = int(self.raw_idx_max * 0.1)
+        self.raw_idx_max_train = int(self.raw_idx_max * 0.2)
 
         self.features_update_sig = 0
         # ===================================================================

@@ -24,7 +24,7 @@ if __name__ == '__main__':
 
     psd = ParseHFTData()
     df = psd.parse_trade_data_tardis(
-        "/home/pcone/drl_crypto/datasets/binance-futures_trades_2024-08-05_FILUSDT.csv.gz"
+        "C:/Users/trade/PycharmProjects/DataGrabber/datasets/binance-futures_trades_2024-08-05_FILUSDT.csv.gz"
     )
 
     print(df)

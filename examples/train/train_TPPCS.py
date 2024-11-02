@@ -41,7 +41,7 @@ if __name__ == '__main__':
         ent_coef=0.0,
         vf_coef=0.5,
         max_grad_norm=0.5,
-        use_sde=False,  # False for discrete actions
+        use_sde=True,  # False for discrete actions
         sde_sample_freq=-1,
         target_kl=None,
         stats_window_size=100,
@@ -52,7 +52,7 @@ if __name__ == '__main__':
 
     model.learn(
         total_timesteps=10**10,
-        callback=TensorboardCallback(target_episodes=10, verbose=1),
+        callback=TensorboardCallback(target_episodes=5, verbose=1),
     ).save(
         path="ppo_crypto_trading",
     )
@@ -66,18 +66,80 @@ if __name__ == '__main__':
     backtest.token_default(token)
     a = 0
     while True:
-        ppo_action, _states = model.predict(obs, deterministic=False)
-        obs, rewards, dones, infos = env.step(ppo_action)
+        action, _states = model.predict(obs, deterministic=True)
+        obs, rewards, dones, infos = env.step(action)
 
         price = infos[0]['price']
-        match infos[0]['trade_signal']:
-            case 1:
+        match action[0]:
+            case action if action >= 0.99:
+                order = Order(side=1, price=price, size=500, order_type="market")
+                backtest.check_orders(price=price, token=token, orders=[order])
+                print(
+                    "buy5",
+                )
+
+            case action if 0.99 > action >= 0.8:
+                order = Order(side=1, price=price, size=200, order_type="market")
+                backtest.check_orders(price=price, token=token, orders=[order])
+                print(
+                    "buy4",
+                )
+
+            case action if 0.8 > action >= 0.6:
+                order = Order(side=1, price=price, size=100, order_type="market")
+                backtest.check_orders(price=price, token=token, orders=[order])
+                print(
+                    "buy3",
+                )
+
+            case action if 0.6 > action >= 0.4:
                 order = Order(side=1, price=price, size=50, order_type="market")
                 backtest.check_orders(price=price, token=token, orders=[order])
+                print(
+                    "buy2",
+                )
 
-            case -1:
+            case action if 0.4 > action >= 0.2:
+                order = Order(side=1, price=price, size=10, order_type="market")
+                backtest.check_orders(price=price, token=token, orders=[order])
+                print(
+                    "buy1",
+                )
+
+            case action if action <= -0.99:
+                order = Order(side=-1, price=price, size=500, order_type="market")
+                backtest.check_orders(price=price, token=token, orders=[order])
+                print(
+                    "sell5",
+                )
+
+            case action if -0.99 < action <= -0.8:
+                order = Order(side=-1, price=price, size=200, order_type="market")
+                backtest.check_orders(price=price, token=token, orders=[order])
+                print(
+                    "sell4",
+                )
+
+            case action if -0.8 < action <= -0.6:
+                order = Order(side=-1, price=price, size=100, order_type="market")
+                backtest.check_orders(price=price, token=token, orders=[order])
+                print(
+                    "sell3",
+                )
+
+            case action if -0.6 < action <= -0.4:
                 order = Order(side=-1, price=price, size=50, order_type="market")
                 backtest.check_orders(price=price, token=token, orders=[order])
+                print(
+                    "sell2",
+                )
+
+            case action if -0.4 < action <= -0.2:
+                order = Order(side=-1, price=price, size=10, order_type="market")
+                backtest.check_orders(price=price, token=token, orders=[order])
+                print(
+                    "sell1",
+                )
 
             case _:
                 backtest.check_orders(price=price, token=token)
