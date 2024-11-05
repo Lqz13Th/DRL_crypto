@@ -8,8 +8,9 @@ from utils.polars_expr import rolling_scaled_sigmoid_expr
 
 
 def rolling_normalize_data(df: pl.DataFrame, window: int) -> pl.DataFrame:
-    columns_to_normalize = df.columns
-
+    df = df.with_columns(pl.col("price_pct_change").rolling_sum(10).alias(f"price_pct_change_sum_10"))
+    columns_to_normalize = [col for col in df.columns if col not in ['price', 'timestamp']]
+    print(columns_to_normalize)
     normalized_df = df.with_columns(
         [
             pl.col(column).rolling_mean(window).alias(f"{column}_rolling_mean")
@@ -21,37 +22,13 @@ def rolling_normalize_data(df: pl.DataFrame, window: int) -> pl.DataFrame:
     ).with_columns(
         rolling_scaled_sigmoid_expr(column, f"{column}_rolling_mean", f"{column}_rolling_std")
         for column in columns_to_normalize
-    ).select(
-        f"scaled_{column}" for column in columns_to_normalize
     )
-
-    # df.with_columns(
-    #     scaled_sum_buy_size=pl.col("sum_buy_size").rolling_mean(window),
-    #     scaled_sum_sell_size=pl.col("sum_sell_size").rolling_mean(window),
-    #     scaled_timestamp_duration=pl.col("timestamp_duration").rolling_mean(window),
-    #     scaled_price_pct_change=pl.col("price_pct_change").rolling_mean(window),
-    #     scaled_buy_sell_imbalance=pl.col("buy_sell_imbalance").rolling_mean(window),
-    #     scaled_change_sidee=pl.col("change_side").rolling_mean(window),
-    # )
-    #
-    # for column in ['sum_buy_size', 'sum_sell_size', 'timestamp_duration', 'price_pct_change',
-    #                'buy_sell_imbalance', 'change_side']:
-    #     rolling_mean = df_normalized[column].rolling(window=window, min_periods=1).mean()
-    #     rolling_std = df_normalized[column].rolling(window=window, min_periods=1).std()
-    #
-    #     # 使用滚动均值和标准差进行scaled sigmoid归一化
-    #     df_normalized[f'scaled_{column}'] = df_normalized.apply(
-    #         lambda row: rolling_scaled_sigmoid(row[column], rolling_mean[row.name], rolling_std[row.name]),
-    #         axis=1
-    #     )
-    print(normalized_df)
     return normalized_df
 
 
 def generate_px_pct_bar(
         df: pl.DataFrame,
         threshold: float,
-        window: int,
 ) -> pl.DataFrame:
     last_px = df[0, "price"]
     last_ts = df[0, "timestamp"]
@@ -62,13 +39,11 @@ def generate_px_pct_bar(
 
     print(last_px)
 
-    for i in tqdm(range(len(df)), desc='Processing bars'):
-        row = df[i]
-        px = row["price"].first()
-        sz = row["amount"].first()
-        ts = row["timestamp"].first()
-
-        side = -1 if row["side"].first() == 'sell' else 1  # 卖方主导为 -1，买方主导为 1
+    for row in tqdm(df.iter_rows(), desc='Processing bars', total=len(df)):
+        ts = row[0]
+        px = row[1]
+        sz = row[2]
+        side = -1 if row[3] == 'sell' else 1  # 卖方主导为 -1，买方主导为 1
         px_pct = (px - last_px) / last_px
         if side == 1:
             sum_buy_size += sz
@@ -80,6 +55,8 @@ def generate_px_pct_bar(
             ts_duration = ts - last_ts
 
             bar = {
+                "ts": ts,
+                "price": px,
                 "sum_buy_size": sum_buy_size,
                 "sum_sell_size": sum_sell_size,
                 "timestamp_duration": ts_duration,
@@ -95,20 +72,6 @@ def generate_px_pct_bar(
             sum_sell_size = 0
 
     bars_df = pl.DataFrame(bars)
-    # bars_df = bars_df.with_columns(
-    #     (bars_df["price_pct_change"].pct_change(1)).alias('future_price_pct_change'),
-    #     (bars_df["future_price_pct_change"].pct_change(1)).alias('future_price_pct_change'),
-    #
-    # )
-    #
-    # # 计算 scaled_sigmoid_future_price_pct_change
-    # bars_df = bars_df.with_columns(
-    #     (bars_df["future_price_pct_change"].apply(
-    #         lambda x: scaled_sigmoid(x, -threshold * float(window), threshold * float(window)))).alias(
-    #         'scaled_sigmoid_future_price_pct_change')
-    # )
-
-    # 删除缺失值
     bars_df = bars_df.drop_nulls()
 
     return bars_df
@@ -116,17 +79,27 @@ def generate_px_pct_bar(
 
 if __name__ == "__main__":
     from ppo_algo.datas.high_frequency_data_parser import ParseHFTData
+    from utils.dates_utils import generate_dates
+
+    start_date = "2024_07_01"
+    end_date = "2024_08_24"
+    dates_list = generate_dates(start_date, end_date)
+
+    path_template = "C:/Users/trade/PycharmProjects/DataGrabber/datasets/binance-futures_trades_{date}_FILUSDT.csv.gz"
+    file_paths = [path_template.format(date=date) for date in dates_list]
+
+    for path in file_paths:
+        print(path)
 
     psd = ParseHFTData()
-    df = psd.parse_trade_data_tardis(
-        "C:/Users/trade/PycharmProjects/DataGrabber/datasets/binance-futures_trades_2024-08-05_FILUSDT.csv.gz"
-    )
+    df = psd.parse_trade_data_list_path_tardis(file_paths)
     print(df)
 
-    pct_sampling = generate_px_pct_bar(df, 0.001, 10)
+    pct_sampling = generate_px_pct_bar(df, 0.001)
     print(pct_sampling)
 
-    normalized_data = rolling_normalize_data(pct_sampling, 200)
+    normalized_data = rolling_normalize_data(pct_sampling, 200).drop_nulls()
     print(normalized_data)
+    normalized_data.write_csv("normalized_data_0.001.csv")
 
 
