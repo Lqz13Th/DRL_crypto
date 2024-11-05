@@ -1,9 +1,7 @@
 import polars as pl
-import pandas as pd
 
 from tqdm import tqdm
 
-from utils.normalizer import scaled_sigmoid
 from utils.polars_expr import rolling_scaled_sigmoid_expr
 
 
