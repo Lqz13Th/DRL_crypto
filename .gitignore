@@ -2,3 +2,8 @@
 /ppo_algo/envs/ppo_crypto_trading.zip
 /examples/train/ppo_crypto_trading.zip
 /examples/train/ppo_crypto_trading_tensorboard/
+/utils/normalized_data.csv
+/examples/train/TPPCS_tensorboard/
+/examples/train/pos_ctr_tensorboard/
+/utils/normalized_data_0.002.csv
+/utils/normalized_data_0.001.csv
