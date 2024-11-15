@@ -45,6 +45,7 @@ class PositionControlEnv(gym.Env):
         self.token = single_token
         self.price = self.features_df[0, "price"]
         self.pos_hold_penalty = 0
+        self.pos_not_open_penalty = 0
 
         self.action_space = spaces.Box(low=-1, high=1, shape=(1,), dtype=np.float32)
 
@@ -61,6 +62,8 @@ class PositionControlEnv(gym.Env):
         self.pnl_rate = 0
         self.pos_value_rate = 0
         self.current_pos_rate = 0
+        self.pos_hold_penalty = 0
+        self.pos_not_open_penalty = 0
 
         self.me.evaluation_default()
         self.me.account_default()
@@ -307,14 +310,27 @@ class PositionControlEnv(gym.Env):
         match self.me.side[self.token]:
             case 1:
                 current_pos_rate = (current_price - avg_pos_price) / avg_pos_price
-                self.pos_hold_penalty += 1
+                if action > 0:
+                    self.pos_hold_penalty += 1
+
+                else:
+                    self.pos_hold_penalty = 0
+
+                self.pos_not_open_penalty = 0
 
             case -1:
                 current_pos_rate = (avg_pos_price - current_price) / avg_pos_price
-                self.pos_hold_penalty += 1
+                if action < 0:
+                    self.pos_hold_penalty += 1
+
+                else:
+                    self.pos_hold_penalty = 0
+
+                self.pos_not_open_penalty = 0
 
             case _:
                 self.pos_hold_penalty = 0
+                self.pos_not_open_penalty += 1
                 pass
 
         self.pnl_rate = pnl_rate
@@ -322,16 +338,18 @@ class PositionControlEnv(gym.Env):
         self.current_pos_rate = current_pos_rate
 
         addition_reward = abs_pos_value_rate if 0.3 > abs_pos_value_rate >= 0.001 else 0
-        action_reward = -abs(action) if action > 0.2 or action < -0.2 else 0.2 - abs(action)
+        action_reward = -abs(action) if action > 0.3 or action < -0.2 else 0.2 - abs(action)
         pos_hold_reward = -self.pos_hold_penalty * 0.0001
+        pos_not_open_reward = -self.pos_not_open_penalty * 0.0001
 
         reward = (
-                + 50. * current_pos_rate
+                + 10. * current_pos_rate
                 - 1. * abs_pos_value_rate
                 + 1. * pnl_rate
                 + 2. * addition_reward
                 + 1. * action_reward
                 + 1. * pos_hold_reward
+                + 1. * pos_not_open_reward
         )
 
-        return scaled_sigmoid(reward, -2, 2) - 0.5
+        return scaled_sigmoid(reward, -5, 5) - 0.5

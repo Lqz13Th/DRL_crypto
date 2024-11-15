@@ -93,11 +93,11 @@ if __name__ == "__main__":
     df = psd.parse_trade_data_list_path_tardis(file_paths)
     print(df)
 
-    pct_sampling = generate_px_pct_bar(df, 0.001)
+    pct_sampling = generate_px_pct_bar(df, 0.0002)
     print(pct_sampling)
 
     normalized_data = rolling_normalize_data(pct_sampling, 200).drop_nulls()
     print(normalized_data)
-    normalized_data.write_csv("normalized_data_0.001.csv")
+    normalized_data.write_csv("normalized_data_0.0002.csv")
 
 

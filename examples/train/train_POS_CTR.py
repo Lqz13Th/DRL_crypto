@@ -9,7 +9,7 @@ from ppo_algo.envs.pos_control_env import PositionControlEnv
 from engine.callback import TensorboardCallback
 
 if __name__ == '__main__':
-    df = pl.read_csv("C:/Users/trade/PycharmProjects/DRL_crypto/utils/normalized_data_0.001.csv")
+    df = pl.read_csv("C:/Users/trade/PycharmProjects/DRL_crypto/utils/normalized_data_0.0002.csv")
     print(df)
 
     token = "FIL-USDT"
@@ -58,7 +58,7 @@ if __name__ == '__main__':
     backtest.token_default(token)
     a = 0
     while True:
-        action, _states = model.predict(obs, deterministic=True)
+        action, _states = model.predict(obs, deterministic=False)
         obs, rewards, dones, infos = env.step(action)
 
         price = infos[0]['price']
