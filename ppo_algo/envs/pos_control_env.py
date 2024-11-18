@@ -35,7 +35,7 @@ class PositionControlEnv(gym.Env):
         self.mode = mode
 
         self.row_idx = 0
-        self.total_idx = self.features_df.shape[0]
+        self.total_idx = self.features_df.shape[0] - 1
         self.total_train_idx = int(self.total_idx * 0.7)
 
         self.pnl_rate = 0
@@ -88,6 +88,8 @@ class PositionControlEnv(gym.Env):
         return init_obs, {}
 
     def step(self, action_state):
+        next_obs = self._next_observation()
+        self.price = self.features_df.row(self.row_idx)[1]
         self._take_action(action_state)
 
         reward = self._calculate_reward(action_state)
@@ -111,8 +113,6 @@ class PositionControlEnv(gym.Env):
 
         truncated = False
 
-        self.price = self.features_df.row(self.row_idx)[1]
-        next_obs = self._next_observation()
         infos = {
             "price": self.price,
         }
@@ -133,7 +133,7 @@ class PositionControlEnv(gym.Env):
                 dtype=np.float32,
             ),
         }
-        self.row_idx += 1
+        self.row_idx = min(self.row_idx + 1, self.total_idx)
 
         return next_obs
 
@@ -151,9 +151,10 @@ class PositionControlEnv(gym.Env):
         )
         self.me.update_pos_value()
 
+        contract_ratio = 0.0001
         match action[0]:
             case action if action >= 0.99:
-                order = Order(side=1, price=self.price, size=500, order_type="market")
+                order = Order(side=1, price=self.price, size=500 * contract_ratio, order_type="market")
                 self.me.check_orders(price=self.price, token=self.token, orders=[order])
                 print(
                     self.row_idx,
@@ -167,7 +168,7 @@ class PositionControlEnv(gym.Env):
                 )
 
             case action if 0.99 > action >= 0.8:
-                order = Order(side=1, price=self.price, size=200, order_type="market")
+                order = Order(side=1, price=self.price, size=200 * contract_ratio, order_type="market")
                 self.me.check_orders(price=self.price, token=self.token, orders=[order])
                 print(
                     self.row_idx,
@@ -181,7 +182,7 @@ class PositionControlEnv(gym.Env):
                 )
 
             case action if 0.8 > action >= 0.6:
-                order = Order(side=1, price=self.price, size=100, order_type="market")
+                order = Order(side=1, price=self.price, size=100 * contract_ratio, order_type="market")
                 self.me.check_orders(price=self.price, token=self.token, orders=[order])
                 print(
                     self.row_idx,
@@ -195,7 +196,7 @@ class PositionControlEnv(gym.Env):
                 )
 
             case action if 0.6 > action >= 0.4:
-                order = Order(side=1, price=self.price, size=50, order_type="market")
+                order = Order(side=1, price=self.price, size=50 * contract_ratio, order_type="market")
                 self.me.check_orders(price=self.price, token=self.token, orders=[order])
                 print(
                     self.row_idx,
@@ -209,7 +210,7 @@ class PositionControlEnv(gym.Env):
                 )
 
             case action if 0.4 > action >= 0.2:
-                order = Order(side=1, price=self.price, size=10, order_type="market")
+                order = Order(side=1, price=self.price, size=10 * contract_ratio, order_type="market")
                 self.me.check_orders(price=self.price, token=self.token, orders=[order])
                 print(
                     self.row_idx,
@@ -223,7 +224,7 @@ class PositionControlEnv(gym.Env):
                 )
 
             case action if action <= -0.99:
-                order = Order(side=-1, price=self.price, size=500, order_type="market")
+                order = Order(side=-1, price=self.price, size=500 * contract_ratio, order_type="market")
                 self.me.check_orders(price=self.price, token=self.token, orders=[order])
                 print(
                     self.row_idx,
@@ -237,7 +238,7 @@ class PositionControlEnv(gym.Env):
                 )
 
             case action if -0.99 < action <= -0.8:
-                order = Order(side=-1, price=self.price, size=200, order_type="market")
+                order = Order(side=-1, price=self.price, size=200 * contract_ratio, order_type="market")
                 self.me.check_orders(price=self.price, token=self.token, orders=[order])
                 print(
                     self.row_idx,
@@ -251,7 +252,7 @@ class PositionControlEnv(gym.Env):
                 )
 
             case action if -0.8 < action <= -0.6:
-                order = Order(side=-1, price=self.price, size=100, order_type="market")
+                order = Order(side=-1, price=self.price, size=100 * contract_ratio, order_type="market")
                 self.me.check_orders(price=self.price, token=self.token, orders=[order])
                 print(
                     self.row_idx,
@@ -265,7 +266,7 @@ class PositionControlEnv(gym.Env):
                 )
 
             case action if -0.6 < action <= -0.4:
-                order = Order(side=-1, price=self.price, size=50, order_type="market")
+                order = Order(side=-1, price=self.price, size=50 * contract_ratio, order_type="market")
                 self.me.check_orders(price=self.price, token=self.token, orders=[order])
                 print(
                     self.row_idx,
@@ -279,7 +280,7 @@ class PositionControlEnv(gym.Env):
                 )
 
             case action if -0.4 < action <= -0.2:
-                order = Order(side=-1, price=self.price, size=10, order_type="market")
+                order = Order(side=-1, price=self.price, size=10 * contract_ratio, order_type="market")
                 self.me.check_orders(price=self.price, token=self.token, orders=[order])
                 print(
                     self.row_idx,
@@ -310,8 +311,8 @@ class PositionControlEnv(gym.Env):
         match self.me.side[self.token]:
             case 1:
                 current_pos_rate = (current_price - avg_pos_price) / avg_pos_price
-                if action > 0:
-                    self.pos_hold_penalty += 1
+                if action > -0.2:
+                    self.pos_hold_penalty += 100
 
                 else:
                     self.pos_hold_penalty = 0
@@ -320,8 +321,8 @@ class PositionControlEnv(gym.Env):
 
             case -1:
                 current_pos_rate = (avg_pos_price - current_price) / avg_pos_price
-                if action < 0:
-                    self.pos_hold_penalty += 1
+                if action < 0.2:
+                    self.pos_hold_penalty += 100
 
                 else:
                     self.pos_hold_penalty = 0
@@ -330,7 +331,7 @@ class PositionControlEnv(gym.Env):
 
             case _:
                 self.pos_hold_penalty = 0
-                self.pos_not_open_penalty += 1
+                self.pos_not_open_penalty += 10
                 pass
 
         self.pnl_rate = pnl_rate
@@ -338,16 +339,16 @@ class PositionControlEnv(gym.Env):
         self.current_pos_rate = current_pos_rate
 
         addition_reward = abs_pos_value_rate if 0.3 > abs_pos_value_rate >= 0.001 else 0
-        action_reward = -abs(action) if action > 0.3 or action < -0.2 else 0.2 - abs(action)
+        action_reward = -abs(action) if action > 0.3 or action < -0.3 else 0.2 - abs(action) * 0.1
         pos_hold_reward = -self.pos_hold_penalty * 0.0001
         pos_not_open_reward = -self.pos_not_open_penalty * 0.0001
 
         reward = (
-                + 10. * current_pos_rate
+                + 50. * current_pos_rate
                 - 1. * abs_pos_value_rate
                 + 1. * pnl_rate
-                + 2. * addition_reward
-                + 1. * action_reward
+                # + 2. * addition_reward
+                # + 1. * action_reward
                 + 1. * pos_hold_reward
                 + 1. * pos_not_open_reward
         )

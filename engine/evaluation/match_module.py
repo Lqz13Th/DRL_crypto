@@ -99,9 +99,13 @@ class MatchEngine(EvaluationEngine):
                 )
 
             case 0:
-                self.side[token] = 1
-                self.average_price[token] = order.price
-                self.position[token] = order.size
+                if self.funds - order.size * order.price > 0:
+                    self.side[token] = 1
+                    self.average_price[token] = order.price
+                    self.position[token] = order.size
+
+                elif self.debug:
+                    print("Insufficient margin", self.cumulative_pos_value, self.funds, order.size, order.price)
 
             case _:
                 pass
@@ -141,9 +145,13 @@ class MatchEngine(EvaluationEngine):
                 )
 
             case 0:
-                self.side[token] = -1
-                self.average_price[token] = order.price
-                self.position[token] = -order.size
+                if self.funds - order.size * order.price > 0:
+                    self.side[token] = -1
+                    self.average_price[token] = order.price
+                    self.position[token] = -order.size
+
+                elif self.debug:
+                    print("Insufficient margin", self.cumulative_pos_value, self.funds, order.size, order.price)
 
             case _:
                 pass
