@@ -6,7 +6,7 @@ from utils.polars_expr import rolling_scaled_sigmoid_expr
 
 
 def rolling_normalize_data(df: pl.DataFrame, window: int) -> pl.DataFrame:
-    df = df.with_columns(pl.col("price_pct_change").rolling_sum(10).alias(f"price_pct_change_sum_10"))
+    df = df.with_columns(pl.col("price_pct_change").rolling_sum(100).alias(f"price_pct_change_sum_100"))
     columns_to_normalize = [col for col in df.columns if col not in ['price', 'timestamp']]
     print(columns_to_normalize)
     normalized_df = df.with_columns(
@@ -93,11 +93,11 @@ if __name__ == "__main__":
     df = psd.parse_trade_data_list_path_tardis(file_paths)
     print(df)
 
-    pct_sampling = generate_px_pct_bar(df, 0.002)
+    pct_sampling = generate_px_pct_bar(df, 0.0002)
     print(pct_sampling)
 
     normalized_data = rolling_normalize_data(pct_sampling, 200).drop_nulls()
     print(normalized_data)
-    normalized_data.write_csv("normalized_data_BTC_2021_04_0.002.csv")
+    normalized_data.write_csv("normalized_data_BTC_2021_04_0.0002.csv")
 
 

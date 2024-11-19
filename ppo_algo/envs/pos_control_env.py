@@ -312,7 +312,7 @@ class PositionControlEnv(gym.Env):
             case 1:
                 current_pos_rate = (current_price - avg_pos_price) / avg_pos_price
                 if action > -0.2:
-                    self.pos_hold_penalty += 100
+                    self.pos_hold_penalty += 10
 
                 else:
                     self.pos_hold_penalty = 0
@@ -322,7 +322,7 @@ class PositionControlEnv(gym.Env):
             case -1:
                 current_pos_rate = (avg_pos_price - current_price) / avg_pos_price
                 if action < 0.2:
-                    self.pos_hold_penalty += 100
+                    self.pos_hold_penalty += 10
 
                 else:
                     self.pos_hold_penalty = 0
@@ -338,7 +338,7 @@ class PositionControlEnv(gym.Env):
         self.pos_value_rate = pos_value_rate
         self.current_pos_rate = current_pos_rate
 
-        addition_reward = abs_pos_value_rate if 0.3 > abs_pos_value_rate >= 0.001 else 0
+        pos_hedge_reward = abs_pos_value_rate if 0.3 > abs_pos_value_rate else 0
         action_reward = -abs(action) if action > 0.3 or action < -0.3 else 0.2 - abs(action) * 0.1
         pos_hold_reward = -self.pos_hold_penalty * 0.0001
         pos_not_open_reward = -self.pos_not_open_penalty * 0.0001
@@ -346,11 +346,11 @@ class PositionControlEnv(gym.Env):
         reward = (
                 + 50. * current_pos_rate
                 - 1. * abs_pos_value_rate
-                + 1. * pnl_rate
-                # + 2. * addition_reward
-                # + 1. * action_reward
-                + 1. * pos_hold_reward
-                + 1. * pos_not_open_reward
+                # # + 1. * pnl_rate
+                # + 1. * pos_hedge_reward
+                # # + 1. * action_reward
+                # + 1. * pos_hold_reward
+                # + 1. * pos_not_open_reward
         )
 
         return scaled_sigmoid(reward, -5, 5) - 0.5
