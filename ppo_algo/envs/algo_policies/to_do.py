@@ -1,7 +1,5 @@
 from typing import Callable, Dict, List, Optional, Tuple, Type, Union
 
-import gym
-from gym import spaces
 import time
 import torch
 import torch.nn as nn
