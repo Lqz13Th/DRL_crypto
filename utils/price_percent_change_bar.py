@@ -79,11 +79,11 @@ if __name__ == "__main__":
     from ppo_algo.datas.high_frequency_data_parser import ParseHFTData
     from utils.dates_utils import generate_dates
 
-    start_date = "2021_04_01"
-    end_date = "2021_08_24"
+    start_date = "2024_01_01"
+    end_date = "2025_03_22"
     dates_list = generate_dates(start_date, end_date)
 
-    path_template = "C:/Users/trade/PycharmProjects/DataGrabber/datasets/binance-futures_trades_{date}_BTCUSDT.csv.gz"
+    path_template = "C:/quant/data/tardis_data/datasets/binance-futures_trades_{date}_BTCUSDT.csv.gz"
     file_paths = [path_template.format(date=date) for date in dates_list]
 
     for path in file_paths:
@@ -93,11 +93,11 @@ if __name__ == "__main__":
     df = psd.parse_trade_data_list_path_tardis(file_paths)
     print(df)
 
-    pct_sampling = generate_px_pct_bar(df, 0.0002)
+    pct_sampling = generate_px_pct_bar(df, 0.0005)
     print(pct_sampling)
 
     normalized_data = rolling_normalize_data(pct_sampling, 200).drop_nulls()
     print(normalized_data)
-    normalized_data.write_csv("normalized_data_BTC_2021_04_0.0002.csv")
+    normalized_data.write_csv("normalized_data_BTC_2024_2025_Q1_0.0005.csv")
 
 

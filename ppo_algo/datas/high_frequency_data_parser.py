@@ -31,7 +31,7 @@ class ParseHFTData:
 if __name__ == '__main__':
     psd = ParseHFTData()
     df = psd.parse_trade_data_tardis(
-        "C:/Users/trade/PycharmProjects/DataGrabber/datasets/binance-futures_trades_2024-08-05_FILUSDT.csv.gz"
+        "C:/quant/data/tardis_data/datasets/binance-futures_trades_2025-03-05_BTCUSDT.csv.gz"
     )
 
     print(df)

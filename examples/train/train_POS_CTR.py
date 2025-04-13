@@ -9,47 +9,52 @@ from ppo_algo.envs.pos_control_env import PositionControlEnv
 from engine.callback import TensorboardCallback
 
 if __name__ == '__main__':
-    df = pl.read_csv("C:/Users/trade/PycharmProjects/DRL_crypto/utils/normalized_data_BTC_0.002.csv").tail(5000)
+    pl.Config.set_tbl_cols(10)  # 例如设置最多显示 100 列
+
+    df = pl.read_csv(
+        "C:/Users/Grayman/PycharmProjects/DRL_crypto/utils/normalized_data_BTC_2024_2025_Q1_0.0005.csv"
+    )
     print(df)
+    print(df.columns)
 
     token = "BTC-USDT"
     # n_updates = total_time_steps // (n_steps * n_envs)
-    # env = make_vec_env(lambda: PositionControlEnv(df, token), n_envs=8)
-    # # tensorboard --logdir=examples/train/pos_ctr_tensorboard
-    #
-    # model = PPO(
-    #     policy="MultiInputPolicy",
-    #     env=env,
-    #     verbose=2,
-    #     learning_rate=3e-4,
-    #     n_steps=128,
-    #     # Number of steps to collect in each environment before updating
-    #     batch_size=32,  # Batch size used for optimization
-    #     n_epochs=10,
-    #     gamma=0.99,
-    #     clip_range=0.2,
-    #     clip_range_vf=None,
-    #     normalize_advantage=True,
-    #     ent_coef=0.0,
-    #     vf_coef=0.5,
-    #     max_grad_norm=0.5,
-    #     use_sde=True,  # False for discrete actions
-    #     sde_sample_freq=20,
-    #     target_kl=None,
-    #     stats_window_size=100,
-    #     seed=13,
-    #     device="auto",
-    #     tensorboard_log="./pos_ctr_tensorboard/",
-    # )
-    #
-    # model.learn(
-    #     total_timesteps=10**10,
-    #     callback=TensorboardCallback(target_episodes=2, verbose=1),
-    # ).save(
-    #     path="ppo_pos_ctr_btc",
-    # )
-    #
-    # del model, env
+    env = make_vec_env(lambda: PositionControlEnv(df, token), n_envs=8)
+    # tensorboard --logdir=examples/train/pos_ctr_tensorboard
+
+    model = PPO(
+        policy="MultiInputPolicy",
+        env=env,
+        verbose=2,
+        learning_rate=3e-4,
+        n_steps=128,
+        # Number of steps to collect in each environment before updating
+        batch_size=32,  # Batch size used for optimization
+        n_epochs=10,
+        gamma=0.99,
+        clip_range=0.2,
+        clip_range_vf=None,
+        normalize_advantage=True,
+        ent_coef=0.0,
+        vf_coef=0.5,
+        max_grad_norm=0.5,
+        use_sde=True,  # False for discrete actions
+        sde_sample_freq=20,
+        target_kl=None,
+        stats_window_size=100,
+        seed=13,
+        device="auto",
+        tensorboard_log="./pos_ctr_tensorboard/",
+    )
+
+    model.learn(
+        total_timesteps=10**100,
+        callback=TensorboardCallback(target_episodes=10, verbose=1),
+    ).save(
+        path="ppo_pos_ctr_btc",
+    )
+
+    del model, env
 
     env = make_vec_env(lambda: PositionControlEnv(df, token, mode='evaluation'), n_envs=1)
     model = PPO.load("ppo_pos_ctr_btc")

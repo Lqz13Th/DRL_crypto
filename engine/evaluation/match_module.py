@@ -9,6 +9,7 @@ class MatchEngine(EvaluationEngine):
             funds=10000,
             maker_commission=0.0002,
             taker_commission=0.0005,
+            slippage=0.001,
             debug=False
     ):
         super().__init__(funds)
@@ -22,6 +23,7 @@ class MatchEngine(EvaluationEngine):
 
         self.maker_commission = maker_commission
         self.taker_commission = taker_commission
+        self.slippage = slippage
 
     def check_orders(self, price: float, token: str, orders=None):
         self._check_limit_order_status(price, token)
@@ -85,7 +87,8 @@ class MatchEngine(EvaluationEngine):
             case -1:
                 filled_size = min(abs(self.position[token]), order.size)
                 cms = self.taker_commission if order.order_type == "market" else self.maker_commission
-                cash_pnl = filled_size * (self.average_price[token] - order.price) - filled_size * cms * 2
+                cash_pnl = filled_size * (self.average_price[token] - order.price)
+                cash_pnl -= filled_size * (cms + self.slippage) * 2
 
                 if filled_size >= abs(self.position[token]):
                     self.token_default(token)
@@ -131,7 +134,8 @@ class MatchEngine(EvaluationEngine):
             case 1:
                 filled_size = min(abs(self.position[token]), order.size)
                 cms = self.taker_commission if order.order_type == "market" else self.maker_commission
-                cash_pnl = filled_size * (order.price - self.average_price[token]) - filled_size * cms * 2
+                cash_pnl = filled_size * (order.price - self.average_price[token])
+                cash_pnl -= filled_size * (cms + self.slippage) * 2
 
                 if filled_size >= abs(self.position[token]):
                     self.token_default(token)

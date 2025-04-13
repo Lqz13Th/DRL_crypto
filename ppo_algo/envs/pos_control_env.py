@@ -29,7 +29,7 @@ class PositionControlEnv(gym.Env):
             "scaled_price_pct_change",
             "scaled_buy_sell_imbalance",
             "scaled_change_side",
-            "scaled_price_pct_change_sum_10"
+            "scaled_price_pct_change_sum_100",
         ]).drop_nulls()
 
         self.mode = mode
