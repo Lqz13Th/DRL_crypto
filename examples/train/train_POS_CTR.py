@@ -12,7 +12,7 @@ if __name__ == '__main__':
     pl.Config.set_tbl_cols(10)  # 例如设置最多显示 100 列
 
     df = pl.read_csv(
-        "C:/Users/Grayman/PycharmProjects/DRL_crypto/utils/normalized_data_BTC_2024_2025_Q1_0.0005.csv"
+        "C:/Users/Grayman/PycharmProjects/DRL_crypto/utils/normalized_data_BTC_2024_2025_Q1_0.0002_rolling50.csv"
     )
     print(df)
     print(df.columns)

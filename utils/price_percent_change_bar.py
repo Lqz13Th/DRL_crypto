@@ -5,11 +5,11 @@ from tqdm import tqdm
 from utils.polars_expr import rolling_scaled_sigmoid_expr
 
 
-def rolling_normalize_data(df: pl.DataFrame, window: int) -> pl.DataFrame:
-    df = df.with_columns(pl.col("price_pct_change").rolling_sum(100).alias(f"price_pct_change_sum_100"))
-    columns_to_normalize = [col for col in df.columns if col not in ['price', 'timestamp']]
+def rolling_normalize_data(rollin_df: pl.DataFrame, window: int) -> pl.DataFrame:
+    rollin_df = rollin_df.with_columns(pl.col("price_pct_change").rolling_sum(100).alias(f"price_pct_change_sum_100"))
+    columns_to_normalize = [col for col in rollin_df.columns if col not in ['price', 'timestamp']]
     print(columns_to_normalize)
-    normalized_df = df.with_columns(
+    normalized_df = rollin_df.with_columns(
         [
             pl.col(column).rolling_mean(window).alias(f"{column}_rolling_mean")
             for column in columns_to_normalize
@@ -25,11 +25,11 @@ def rolling_normalize_data(df: pl.DataFrame, window: int) -> pl.DataFrame:
 
 
 def generate_px_pct_bar(
-        df: pl.DataFrame,
+        input_df: pl.DataFrame,
         threshold: float,
 ) -> pl.DataFrame:
-    last_px = df[0, "price"]
-    last_ts = df[0, "timestamp"]
+    last_px = input_df[0, "price"]
+    last_ts = input_df[0, "timestamp"]
 
     bars = []
     sum_buy_size = 0
@@ -37,7 +37,7 @@ def generate_px_pct_bar(
 
     print(last_px)
 
-    for row in tqdm(df.iter_rows(), desc='Processing bars', total=len(df)):
+    for row in tqdm(input_df.iter_rows(), desc='Processing bars', total=len(input_df)):
         ts = row[0]
         px = row[1]
         sz = row[2]
@@ -93,11 +93,11 @@ if __name__ == "__main__":
     df = psd.parse_trade_data_list_path_tardis(file_paths)
     print(df)
 
-    pct_sampling = generate_px_pct_bar(df, 0.0005)
+    pct_sampling = generate_px_pct_bar(df, 0.0002)
     print(pct_sampling)
 
-    normalized_data = rolling_normalize_data(pct_sampling, 200).drop_nulls()
+    normalized_data = rolling_normalize_data(pct_sampling, 50).drop_nulls()
     print(normalized_data)
-    normalized_data.write_csv("normalized_data_BTC_2024_2025_Q1_0.0005.csv")
+    normalized_data.write_csv("normalized_data_BTC_2024_2025_Q1_0.0002_rolling50.csv")
 
 
