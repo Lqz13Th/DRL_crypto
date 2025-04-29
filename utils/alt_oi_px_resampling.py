@@ -65,112 +65,55 @@ def auto_fill_dataframes_with_old_data(auto_fill_df: pl.DataFrame) -> pl.DataFra
     return auto_fill_df
 
 def generate_alt_oi_px_bar(
-        input_trade_df: pl.DataFrame,
-        input_lob_df: pl.DataFrame,
-        input_alt_df: pl.DataFrame,
+        input_df: pl.DataFrame,
         threshold: float,
-        simulation_latency: int = 100 * 1_000,
-        i_alt = 0,
 ) -> (pl.DataFrame, int):
+    last_px = input_df[0, "price"]
+    last_ts = input_df[0, "timestamp"]
 
-    input_trade_df = input_trade_df.sort("timestamp")
-    input_lob_df = input_lob_df.sort("timestamp")
-    input_alt_df = input_alt_df.sort("timestamp")
-
-
-    # init
-    lock_trade, lock_lob = 0, 0
-
-
-    # temp
-    sync_ts = 0
-    i_trade, i_lob, i_alt = 0, 0, i_alt
-    row_trade, row_lob, row_alt = input_trade_df[i_trade], input_lob_df[i_lob], input_alt_df[i_alt]
-
-    # sampled data
     sampled_datas = []
     sum_buy_size = 0
     sum_sell_size = 0
 
-    while i_trade < len(input_trade_df) and i_lob < len(input_lob_df) and i_alt < len(input_alt_df):
-        sum_buy_size = 0
-        sum_sell_size = 0
+    print(last_px)
 
-        ts_trade = row_trade['timestamp'].to_list()[0]
-        ts_lob = row_lob['timestamp'].to_list()[0]
-        ts_alt = row_alt['timestamp'].to_list()[0]
-        sync_ts = min(ts_trade, ts_lob, ts_alt)
+    for row in tqdm(input_df.iter_rows(), desc='Processing daily sampled data', total=len(input_df)):
+        ts = row[0]
+        px = row[1]
+        sz = row[2]
+        side = -1 if row[3] == 'sell' else 1  # 卖方主导为 -1，买方主导为 1
+        px_pct = (px - last_px) / last_px
+        if side == 1:
+            sum_buy_size += sz
 
-        if ts_trade == sync_ts:
-            row_trade = input_trade_df[i_trade]
-            sync_ts = row_trade['timestamp'].to_list()[0]
-            # side = row_trade['side']
-            # size = row_trade['size']
-            # if side == 'buy':
-            #     sum_buy_size += size
-            # else:
-            #     sum_sell_size += size
-            i_trade += 1
-            lock_trade = 1
-            # sampled_data = {
-            #     "ts": ts_trade,
-            #     "trade": 1,
-            #     "lob": 0,
-            #     "alt": 0,
-            # }
-            # sampled_datas.append(sampled_data)
-            sum_buy_size = 1
+        else:
+            sum_sell_size += sz
 
+        if abs(px_pct) > threshold:
+            ts_duration = ts - last_ts
 
-        if ts_lob == sync_ts:
-            row_lob = input_lob_df[i_lob]
-            sync_ts = row_lob['timestamp'].to_list()[0]
-
-            i_lob += 1
-            lock_lob = 1
-            # sampled_data = {
-            #     "ts": ts_lob,
-            #     "trade": 0,
-            #     "lob": 1,
-            #     "alt": 0,
-            # }
-            # sampled_datas.append(sampled_data)
-            sum_sell_size = 1
-
-
-        if ts_alt == sync_ts:
-            row_alt = input_alt_df[i_alt]
-            sync_ts = row_alt['timestamp'].to_list()[0]
-            i_alt += 1
-            # print(row_alt)
-            if i_alt >= len(input_alt_df):
-                i_alt -= 1
-                break
-
-            # sampled_data = {
-            #     "ts": ts_alt,
-            #     "trade": 0,
-            #     "lob": 0,
-            #     "alt": 1,
-            # }
-            # sampled_datas.append(sampled_data)
-            # l_ts = ts_alt
-            # print(l_ts)
-
-        if lock_trade == lock_lob == 1:
-            sampled_data = {
-                "ts": sync_ts,
-                "price": row_trade['price'].to_list()[0],
-                "ask": row_lob['asks[0].price'].to_list()[0],
-                'td': sum_buy_size,
-                'lob': sum_sell_size,
+            bar = {
+                "ts": ts,
+                "price": px,
+                "sum_buy_size": sum_buy_size,
+                "sum_sell_size": sum_sell_size,
+                "timestamp_duration": ts_duration,
+                "price_pct_change": px_pct,
+                'buy_sell_imbalance': sum_buy_size - sum_sell_size,
+                "change_side": 1 if px_pct > 0 else 0,
             }
-            sampled_datas.append(sampled_data)
+            sampled_datas.append(bar)
+
+            last_px = px
+            last_ts = ts
+            sum_buy_size = 0
+            sum_sell_size = 0
+
 
     sampled_df = pl.DataFrame(sampled_datas)
     sampled_df = sampled_df.drop_nulls()
 
-    return (sampled_df, i_alt)
+    return sampled_df
 
 
 def process_data_by_day_with_multiple_pairs(
@@ -205,8 +148,6 @@ def process_data_by_day_with_multiple_pairs(
 
 
         print(alt_df)
-        i_alt = 0
-        # sampled_row =
 
         for date in tqdm(dates_list, desc='Processing bars', total=len(dates_list)):
             tardis_trade_path = tardis_trade_path_template.format(date=date, symbol=ins)
@@ -220,13 +161,13 @@ def process_data_by_day_with_multiple_pairs(
 
             ts_min = min(trade_df['timestamp'].min(), lob_df['timestamp'].min()) - 1 * 1000 * 1000
             ts_max = max(trade_df['timestamp'].max(), lob_df['timestamp'].max())
+
             print(ts_min, ts_max)
+
             alt_daily_df = alt_df.filter(
                 (pl.col('timestamp') >= ts_min) &
                 (pl.col('timestamp') <= ts_max)
             )
-            print(alt_daily_df)
-            # 假设你有三个 df：trades_df, book_df, vol_df
             merged_df = merge_dataframes_on_timestamp(
                 [trade_df, lob_df, alt_daily_df],
                 ["trades_", "lob_", "alt_"]
@@ -234,13 +175,11 @@ def process_data_by_day_with_multiple_pairs(
 
             print(merged_df)
             merged_df = auto_fill_dataframes_with_old_data(merged_df)
-            merged_df.head(100000).write_csv("c.csv")
-            print(auto_fill_dataframes_with_old_data(merged_df))
             exit()
 
 
 
-            (pct_sampling, i_alt) = generate_alt_oi_px_bar(trade_df, lob_df, alt_df, threshold, i_alt)
+            pct_sampling = generate_alt_oi_px_bar(trade_df, lob_df, alt_df, threshold)
             print(f"Generated price percent change bars for {ins} on {date}. Shape: {pct_sampling.shape}")
             print(pct_sampling)
             pct_sampling.write_csv("a.csv")
