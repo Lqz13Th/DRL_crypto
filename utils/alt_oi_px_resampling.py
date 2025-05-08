@@ -68,7 +68,8 @@ def generate_alt_oi_px_bar(
         input_df: pl.DataFrame,
         threshold: float,
 ) -> (pl.DataFrame, int):
-    last_px = input_df[0, "price"]
+
+    last_px = input_df[0, "trades_price"]
     last_ts = input_df[0, "timestamp"]
 
     sampled_datas = []
@@ -152,13 +153,10 @@ def process_data_by_day_with_multiple_pairs(
         for date in tqdm(dates_list, desc='Processing bars', total=len(dates_list)):
             tardis_trade_path = tardis_trade_path_template.format(date=date, symbol=ins)
             tardis_lob_path = tardis_lob_path_template.format(date=date, symbol=ins)
-
             trade_df = psd.parse_trade_data_tardis(tardis_trade_path)
-            print("Parsed data for {ins} on {date}. Shape: {trade_df.shape}")
-
+            print(trade_df)
             lob_df = psd.parse_lob_data_tardis(tardis_lob_path)
-            print(f"Parsed data for {ins} on {date}. Shape: {lob_df.shape}")
-
+            print(lob_df)
             ts_min = min(trade_df['timestamp'].min(), lob_df['timestamp'].min()) - 1 * 1000 * 1000
             ts_max = max(trade_df['timestamp'].max(), lob_df['timestamp'].max())
 
@@ -173,13 +171,10 @@ def process_data_by_day_with_multiple_pairs(
                 ["trades_", "lob_", "alt_"]
             )
 
-            print(merged_df)
-            merged_df = auto_fill_dataframes_with_old_data(merged_df)
-            exit()
+            auto_filled_df = auto_fill_dataframes_with_old_data(merged_df).drop_nulls()
 
-
-
-            pct_sampling = generate_alt_oi_px_bar(trade_df, lob_df, alt_df, threshold)
+            print(auto_filled_df)
+            pct_sampling = generate_alt_oi_px_bar(auto_filled_df, threshold)
             print(f"Generated price percent change bars for {ins} on {date}. Shape: {pct_sampling.shape}")
             print(pct_sampling)
             pct_sampling.write_csv("a.csv")
@@ -210,7 +205,8 @@ if __name__ == "__main__":
     from ppo_algo.datas.high_frequency_data_parser import ParseHFTData
 
 
-    instruments = ["BTCUSDT", "ETHUSDT", "FILUSDT", "GUNUSDT", "JASMYUSDT"]
+    # instruments = ["BTCUSDT", "ETHUSDT", "FILUSDT", "GUNUSDT", "JASMYUSDT"]
+    instruments = ["BTCUSDT"]
     output_directory = "C:/quant/data/binance_resampled_data"
     process_data_by_day_with_multiple_pairs(
         start_date="2025_04_06",
