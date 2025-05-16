@@ -6,6 +6,7 @@ from tqdm import tqdm
 from ppo_algo.datas.high_frequency_data_parser import ParseHFTData
 from utils.polars_expr import rolling_scaled_sigmoid_expr
 from utils.dates_utils import generate_dates
+from factors.lob_factors import *
 
 def rolling_normalize_data(rollin_df: pl.DataFrame, window: int) -> pl.DataFrame:
     rollin_df = rollin_df.with_columns(pl.col("price_pct_change").rolling_sum(100).alias(f"price_pct_change_sum_100"))
@@ -64,6 +65,12 @@ def auto_fill_dataframes_with_old_data(auto_fill_df: pl.DataFrame) -> pl.DataFra
 
     return auto_fill_df
 
+def on_sampling(row, leverage):
+    return {
+        "impact_price_pct_ask_imn": impact_price_pct_ask_row(row, imn=cal_imn_usdt(leverage)),
+        "impact_price_pct_bid_imn": impact_price_pct_bid_row(row, imn=cal_imn_usdt(leverage)),
+    }
+
 def generate_alt_oi_px_bar(
         input_df: pl.DataFrame,
         threshold: float,
@@ -78,7 +85,9 @@ def generate_alt_oi_px_bar(
 
     print(last_px)
 
-    for row in tqdm(input_df.iter_rows(), desc='Processing daily sampled data', total=len(input_df)):
+    for row in input_df.iter_rows(named=True):
+        print(row)
+        exit()
         ts = row[0]
         px = row[1]
         sz = row[2]
@@ -93,7 +102,7 @@ def generate_alt_oi_px_bar(
         if abs(px_pct) > threshold:
             ts_duration = ts - last_ts
 
-            bar = {
+            sampled_data = {
                 "ts": ts,
                 "price": px,
                 "sum_buy_size": sum_buy_size,
@@ -102,8 +111,10 @@ def generate_alt_oi_px_bar(
                 "price_pct_change": px_pct,
                 'buy_sell_imbalance': sum_buy_size - sum_sell_size,
                 "change_side": 1 if px_pct > 0 else 0,
+
             }
-            sampled_datas.append(bar)
+
+            sampled_datas.append(sampled_data)
 
             last_px = px
             last_ts = ts
@@ -131,7 +142,7 @@ def process_data_by_day_with_multiple_pairs(
     dates_list = generate_dates(start_date, end_date)
     tardis_trade_path_template = "C:/quant/data/tardis_data/datasets/binance-futures_trades_{date}_{symbol}.csv.gz"
     tardis_lob_path_template = "C:/quant/data/tardis_data/datasets/binance-futures_book_snapshot_25_{date}_{symbol}.csv.gz"
-    alt_data_path_template = "C:/quant/data/binance_alt_data/alt_database/binance_futures_data/combined_alt_data/{symbol}_data.csv"
+    alt_data_path_template = "C:/quant/data/binance_alt_data/alt_database/binance_futures_data/alt_factors_data/{symbol}_data.csv"
 
     psd = ParseHFTData()
 
@@ -174,10 +185,10 @@ def process_data_by_day_with_multiple_pairs(
             auto_filled_df = auto_fill_dataframes_with_old_data(merged_df).drop_nulls()
 
             print(auto_filled_df)
+            print(auto_filled_df.columns)
+            # exit()
             pct_sampling = generate_alt_oi_px_bar(auto_filled_df, threshold)
             print(f"Generated price percent change bars for {ins} on {date}. Shape: {pct_sampling.shape}")
-            print(pct_sampling)
-            pct_sampling.write_csv("a.csv")
             exit()
             # normalized_data = rolling_normalize_data(pct_sampling, rolling_window).drop_nulls()
             # print(f"Normalized data for {ins} on {date}. Shape: {normalized_data.shape}")
