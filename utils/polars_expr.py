@@ -20,7 +20,7 @@ def rolling_scaled_sigmoid_expr(x: str, mean: str, std: str) -> pl.Expr:
         .otherwise(
             scaled_sigmoid_expr(cal_z_score(pl.col(x), pl.col(mean), pl.col(std)), pl.lit(-2.), pl.lit(2.))
         )
-        .alias(f"scaled_{x}")  # 列命名
+        .alias(f"{x}_scaled")  # 列命名
     )
 
 def rolling_sum_expr(col_name: str, window: int) -> pl.Expr:
@@ -30,7 +30,7 @@ def rolling_normalize_data(rollin_df: pl.DataFrame, window: int) -> pl.DataFrame
     columns_to_normalize = [
         col for col in rollin_df.columns
         if col not in ['price', 'timestamp', 'symbol']
-           and not (col.endswith('_rolling_mean') or col.endswith('_rolling_std'))
+           and not (col.endswith('_rolling_mean') or col.endswith('_rolling_std') or col.endswith('_scaled'))
     ]
 
     normalized_df = rollin_df.with_columns(

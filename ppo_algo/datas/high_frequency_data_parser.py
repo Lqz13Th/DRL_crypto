@@ -19,8 +19,11 @@ class ParseHFTData:
 
     @staticmethod
     def parse_lob_data_tardis(file_path: str) -> pl.DataFrame:
-        df_lob = pl.scan_csv(file_path)
         columns_to_exclude = ['exchange', 'symbol', 'local_timestamp']
+        df_lob = pl.scan_csv(
+            file_path,
+            infer_schema_length=10000,
+        )
 
         df_lob = df_lob.drop(columns_to_exclude)
 
