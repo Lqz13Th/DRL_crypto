@@ -118,6 +118,7 @@ def generate_alt_oi_px_bar(
 def cal_factors_with_sampled_data(
         input_path: str,
 ) -> pl.DataFrame:
+    EPSILON = 1e-6
 
     factors_df = (
         pl
@@ -132,18 +133,20 @@ def cal_factors_with_sampled_data(
             pl.col("price").pct_change().rolling_mean(10).alias("ret_mean_10"),
             pl.col("price").rolling_std(10).alias("volatility_10"),
 
-            ((pl.col("sum_buy_size") - pl.col("sum_sell_size")) / (
-                        pl.col("sum_buy_size") + pl.col("sum_sell_size") + 1e-6))
+            ((pl.col("sum_buy_size") - pl.col("sum_sell_size")) /
+             (pl.col("sum_buy_size") + pl.col("sum_sell_size") + EPSILON))
             .alias("buy_sell_ratio"),
 
             pl.col("sum_buy_size").rolling_mean(10).alias("avg_buy_size_10"),
             pl.col("sum_sell_size").rolling_mean(10).alias("avg_sell_size_10"),
 
+            pl.col("price_pct_change").rolling_sum(window_size=50).alias("rolling_px_pct_sum"),
+
             pl.col("change_side").rolling_sum(5).alias("change_side_sum_5"),
         ])
         .with_columns([
-            (pl.col("rolling_px_pct_sum") - pl.col("alt_factor_short_term_oi_trend_scaled")).alias(
-                "px_short_oi_divergence"),
+            (pl.col("rolling_px_pct_sum") / pl.col("alt_factor_short_term_oi_trend_scaled"))
+            .alias("px_short_oi_divergence"),
 
             (pl.col("alt_factor_short_term_oi_trend_scaled") - pl.col("alt_factor_long_term_oi_trend_scaled"))
             .alias("oi_trend_slope"),
@@ -165,7 +168,10 @@ def cal_factors_with_sampled_data(
             .alias("momentum_confirmed_by_orderflow"),
 
             ((pl.col("px_short_oi_divergence") > 0).cast(pl.Int8) * pl.col("impact_momentum"))
-            .alias("oi_breakout_signal"),
+            .alias("oi_long_breakout_signal"),
+
+            ((pl.col("px_short_oi_divergence") < 0).cast(pl.Int8) * pl.col("impact_momentum"))
+            .alias("oi_short_breakout_signal"),
         ])
         .drop_nulls()
         .collect()
@@ -206,36 +212,36 @@ def process_data_by_day_with_multiple_pairs(
 
         print(alt_df)
 
-        # for date in tqdm(dates_list, desc='Processing bars', total=len(dates_list)):
-        #     tardis_trade_path = tardis_trade_path_template.format(date=date, symbol=ins)
-        #     tardis_lob_path = tardis_lob_path_template.format(date=date, symbol=ins)
-        #     trade_df = psd.parse_trade_data_tardis(tardis_trade_path)
-        #     lob_df = psd.parse_lob_data_tardis(tardis_lob_path)
-        #     ts_min = min(trade_df['timestamp'].min(), lob_df['timestamp'].min()) - 1 * 1000 * 1000
-        #     ts_max = max(trade_df['timestamp'].max(), lob_df['timestamp'].max())
-        #
-        #     alt_daily_df = alt_df.filter(
-        #         (pl.col('timestamp') >= ts_min) &
-        #         (pl.col('timestamp') <= ts_max)
-        #     )
-        #     merged_df = merge_dataframes_on_timestamp(
-        #         [trade_df, lob_df, alt_daily_df],
-        #         ["trades_", "lob_", "alt_"]
-        #     )
-        #
-        #     auto_filled_df = auto_fill_dataframes_with_old_data(merged_df).drop_nulls()
-        #
-        #     pct_sampling = generate_alt_oi_px_bar(auto_filled_df, threshold)
-        #     normalized_data = rolling_normalize_data(pct_sampling, rolling_window).drop_nulls()
-        #     symbol_folder = os.path.join(output_dir, ins)
-        #     if not os.path.exists(symbol_folder):
-        #         os.makedirs(symbol_folder)
-        #
-        #     output_file_path = os.path.join(symbol_folder,
-        #                                     f"normalized_data_{ins}_{date}_threshold{threshold}_rolling{rolling_window}.csv")
-        #     normalized_data.write_csv(output_file_path)
-        #
-        #     del trade_df, lob_df, pct_sampling, normalized_data
+        for date in tqdm(dates_list, desc='Processing bars', total=len(dates_list)):
+            tardis_trade_path = tardis_trade_path_template.format(date=date, symbol=ins)
+            tardis_lob_path = tardis_lob_path_template.format(date=date, symbol=ins)
+            trade_df = psd.parse_trade_data_tardis(tardis_trade_path)
+            lob_df = psd.parse_lob_data_tardis(tardis_lob_path)
+            ts_min = min(trade_df['timestamp'].min(), lob_df['timestamp'].min()) - 1 * 1000 * 1000
+            ts_max = max(trade_df['timestamp'].max(), lob_df['timestamp'].max())
+
+            alt_daily_df = alt_df.filter(
+                (pl.col('timestamp') >= ts_min) &
+                (pl.col('timestamp') <= ts_max)
+            )
+            merged_df = merge_dataframes_on_timestamp(
+                [trade_df, lob_df, alt_daily_df],
+                ["trades_", "lob_", "alt_"]
+            )
+
+            auto_filled_df = auto_fill_dataframes_with_old_data(merged_df).drop_nulls()
+
+            pct_sampling = generate_alt_oi_px_bar(auto_filled_df, threshold)
+            normalized_data = rolling_normalize_data(pct_sampling, rolling_window).drop_nulls()
+            symbol_folder = os.path.join(output_dir, ins)
+            if not os.path.exists(symbol_folder):
+                os.makedirs(symbol_folder)
+
+            output_file_path = os.path.join(symbol_folder,
+                                            f"normalized_data_{ins}_{date}_threshold{threshold}_rolling{rolling_window}.csv")
+            normalized_data.write_csv(output_file_path)
+
+            del trade_df, lob_df, pct_sampling, normalized_data
 
         output_path = merge_all_csvs_for_symbol(
             symbol=ins,
@@ -249,6 +255,8 @@ def process_data_by_day_with_multiple_pairs(
 
         normalized_factors_df = rolling_normalize_data(factors_df, rolling_window).drop_nulls()
         normalized_factors_df.write_csv(os.path.join(output_dir, f"{ins}_factors.csv"))
+        print(f"{ins} 因子计算完成，共 {normalized_factors_df.shape[0]} 行。保存至：{output_path}")
+
 
 def merge_all_csvs_for_symbol(symbol: str, input_dir: str, output_dir: str) -> str:
     symbol_folder = os.path.join(input_dir, symbol)
