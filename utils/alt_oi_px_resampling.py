@@ -93,7 +93,7 @@ def generate_alt_oi_px_bar(
                 'buy_sell_imbalance': sum_buy_size - sum_sell_size,
                 "change_side": 1 if px_pct > 0 else 0,
                 "alt_factor_long_term_oi_trend": row['alt_factor_long_term_oi_trend'],
-                "alt_top_long_short_position_ratio_data_longShortRatio_scaled": row['alt_top_long_short_position_ratio_data_longShortRatio_rolling_mean'],
+                "alt_top_long_short_position_ratio_data_longShortRatio_scaled": row['alt_top_long_short_position_ratio_data_longShortRatio_rolling_scaled'],
                 "alt_trade_taker_long_short_ratio_data_buySellRatio_scaled": row['alt_trade_taker_long_short_ratio_data_buySellRatio_scaled'],
                 "alt_factor_short_term_oi_trend_scaled": row['alt_factor_short_term_oi_trend_scaled'],
                 "alt_factor_long_term_oi_trend_scaled": row['alt_factor_long_term_oi_trend_scaled'],
