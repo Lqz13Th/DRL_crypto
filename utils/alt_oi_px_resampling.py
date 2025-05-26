@@ -53,6 +53,16 @@ def on_sampling(row, leverage):
     return {
         "impact_price_pct_ask_imn": impact_price_pct_ask_row(row, imn=cal_imn_usdt(leverage)),
         "impact_price_pct_bid_imn": impact_price_pct_bid_row(row, imn=cal_imn_usdt(leverage)),
+        "mid_price": (row["lob_asks[0].price"] + row["lob_bids[0].price"]) / 2,
+        "spread": row["lob_asks[0].price"] - row["lob_bids[0].price"],
+        "far_bid_price": row["lob_bids[19].price"],
+        "far_ask_price": row["lob_asks[19].price"],
+        "best_bid_price": row["lob_bids[0].price"],
+        "best_ask_price": row["lob_asks[0].price"],
+        "best_bid_amount": row["lob_bids[0].amount"],
+        "best_ask_amount": row["lob_asks[0].amount"],
+        "real_bid_amount_sum": calculate_bid_amount_sum_row(row),
+        "real_ask_amount_sum": calculate_ask_amount_sum_row(row),
     }
 
 def generate_alt_oi_px_bar(
@@ -66,7 +76,6 @@ def generate_alt_oi_px_bar(
     sampled_datas = []
     sum_buy_size = 0
     sum_sell_size = 0
-
 
     for row in input_df.iter_rows(named=True):
         ts = row['timestamp']
@@ -84,20 +93,23 @@ def generate_alt_oi_px_bar(
             ts_duration = ts - last_ts
 
             sampled_data = {
-                "ts": ts,
+                "timestamp": ts,
                 "price": px,
                 "sum_buy_size": sum_buy_size,
                 "sum_sell_size": sum_sell_size,
                 "timestamp_duration": ts_duration,
                 "price_pct_change": px_pct,
-                'buy_sell_imbalance': sum_buy_size - sum_sell_size,
+                "buy_sell_imbalance": sum_buy_size - sum_sell_size,
+                "trades_side": side,
                 "change_side": 1 if px_pct > 0 else 0,
+                "alt_top_long_short_account_ratio_data_longShortRatio": row['alt_top_long_short_account_ratio_data_longShortRatio'],
+                "alt_top_long_short_position_ratio_data_longShortRatio": row['alt_top_long_short_position_ratio_data_longShortRatio'],
+                "alt_trade_taker_long_short_ratio_data_buySellRatio": row['alt_trade_taker_long_short_ratio_data_buySellRatio'],
+                "alt_long_short_ratio_data_longShortRatio": row['alt_long_short_ratio_data_longShortRatio'],
+                "alt_open_interest_data_sumOpenInterest": row['alt_open_interest_data_sumOpenInterest'],
+                "alt_open_interest_data_sumOpenInterestValue": row['alt_open_interest_data_sumOpenInterestValue'],
+                "alt_factor_short_term_oi_trend": row['alt_factor_short_term_oi_trend'],
                 "alt_factor_long_term_oi_trend": row['alt_factor_long_term_oi_trend'],
-                "alt_top_long_short_position_ratio_data_longShortRatio_scaled": row['alt_top_long_short_position_ratio_data_longShortRatio_scaled'],
-                "alt_trade_taker_long_short_ratio_data_buySellRatio_scaled": row['alt_trade_taker_long_short_ratio_data_buySellRatio_scaled'],
-                "alt_factor_short_term_oi_trend_scaled": row['alt_factor_short_term_oi_trend_scaled'],
-                "alt_factor_long_term_oi_trend_scaled": row['alt_factor_long_term_oi_trend_scaled'],
-                "alt_factor_buy_sell_vol_diff_scaled": row['alt_factor_buy_sell_vol_diff_scaled'],
                 **on_sampling(row, 125),
             }
 
@@ -145,10 +157,10 @@ def cal_factors_with_sampled_data(
             pl.col("change_side").rolling_sum(5).alias("change_side_sum_5"),
         ])
         .with_columns([
-            (pl.col("rolling_px_pct_sum") / pl.col("alt_factor_short_term_oi_trend_scaled"))
+            (pl.col("rolling_px_pct_sum") / pl.col("alt_factor_short_term_oi_trend"))
             .alias("px_short_oi_divergence"),
 
-            (pl.col("alt_factor_short_term_oi_trend_scaled") - pl.col("alt_factor_long_term_oi_trend_scaled"))
+            (pl.col("alt_factor_short_term_oi_trend") - pl.col("alt_factor_long_term_oi_trend"))
             .alias("oi_trend_slope"),
 
             (pl.col("price").diff().rolling_mean(100) - pl.col("alt_factor_long_term_oi_trend"))
@@ -200,15 +212,26 @@ def process_data_by_day_with_multiple_pairs(
     for ins in target_instruments:
         print(f"Processing data for instrument: {ins}...")
         alt_data_path = alt_data_path_template.format(symbol=ins)
-        alt_df = (
-            pl
-            .read_csv(alt_data_path)
-            .with_columns(
-                (pl.col('timestamp') * 1000)
-                .alias('timestamp')
-            )
-        )
 
+        alt_df = pl.scan_csv(alt_data_path)
+
+        cols = [col for col in alt_df.collect_schema().names() if col != '']
+
+        alt_df = (
+            alt_df
+            .select(cols)
+            .with_columns([
+                pl.col(col).cast(
+                    pl.Int64 if col == "timestamp" else
+                    pl.Utf8 if col == "symbol" else
+                    pl.Float64
+                ) for col in cols
+            ])
+            .with_columns(
+                (pl.col("timestamp") * 1000).alias("timestamp")
+            )
+            .collect()
+        )
 
         print(alt_df)
 
@@ -228,53 +251,83 @@ def process_data_by_day_with_multiple_pairs(
                 [trade_df, lob_df, alt_daily_df],
                 ["trades_", "lob_", "alt_"]
             )
+            del trade_df, lob_df, alt_daily_df,
 
             auto_filled_df = auto_fill_dataframes_with_old_data(merged_df).drop_nulls()
-
+            print(auto_filled_df)
             pct_sampling = generate_alt_oi_px_bar(auto_filled_df, threshold)
-            normalized_data = rolling_normalize_data(pct_sampling, rolling_window).drop_nulls()
             symbol_folder = os.path.join(output_dir, ins)
             if not os.path.exists(symbol_folder):
                 os.makedirs(symbol_folder)
 
-            output_file_path = os.path.join(symbol_folder,
-                                            f"normalized_data_{ins}_{date}_threshold{threshold}_rolling{rolling_window}.csv")
-            normalized_data.write_csv(output_file_path)
+            output_file_path = os.path.join(
+                symbol_folder,
+                f"resampled_data_{ins}_{date}_threshold{threshold}_rolling{rolling_window}.csv"
+            )
 
-            del trade_df, lob_df, pct_sampling, normalized_data
+            pct_sampling.write_csv(output_file_path)
+            del merged_df, pct_sampling
 
         output_path = merge_all_csvs_for_symbol(
             symbol=ins,
+            dates_list=dates_list,
             input_dir=output_dir,
-            output_dir=output_dir
+            output_dir=output_dir,
+            threshold=threshold,
+            rolling_window=rolling_window,
         )
 
         factors_df = cal_factors_with_sampled_data(
             input_path=output_path,
         )
 
-        normalized_factors_df = rolling_normalize_data(factors_df, rolling_window).drop_nulls()
-        normalized_factors_df.write_csv(os.path.join(output_dir, f"{ins}_factors.csv"))
-        print(f"{ins} 因子计算完成，共 {normalized_factors_df.shape[0]} 行。保存至：{output_path}")
+        output_filename = f"{ins}_factors_threshold{threshold}_rolling{rolling_window}.csv"
+        output_path = os.path.join(output_dir, output_filename)
+
+        # normalized_factors_df = rolling_normalize_data(factors_df, rolling_window).drop_nulls()
+        factors_df.write_csv(output_path)
+        print(f"{ins} 因子计算完成，共 {factors_df.shape[0]} 行。保存至：{output_path}")
 
 
-def merge_all_csvs_for_symbol(symbol: str, input_dir: str, output_dir: str) -> str:
+def merge_all_csvs_for_symbol(
+        symbol: str,
+        dates_list: list,
+        input_dir: str,
+        output_dir: str,
+        threshold: float,
+        rolling_window: int,
+) -> str:
     symbol_folder = os.path.join(input_dir, symbol)
-    all_files = [
-        os.path.join(symbol_folder, f)
-        for f in os.listdir(symbol_folder)
-        if f.endswith(".csv") and f.startswith("normalized_data")
+
+    target_files = [
+        f"resampled_data_{symbol}_{date}_threshold{threshold}_rolling{rolling_window}.csv"
+        for date in dates_list
     ]
 
-    # 全部读入并垂直拼接
-    df_list = [pl.read_csv(f) for f in all_files]
-    merged_df = pl.concat(df_list)
+    df_list = []
+    for fname in target_files:
+        fpath = os.path.join(symbol_folder, fname)
+        if os.path.exists(fpath):
+            df_to_merge = pl.read_csv(fpath)
+            print(f"reading files: {fpath}")
+            casted_df = df_to_merge.with_columns([
+                pl.col(col).cast(
+                    pl.Int64 if col == "timestamp" else
+                    pl.Float64
+                ) for col in df_to_merge.columns
+            ])
+            df_list.append(casted_df)
+        else:
+            print(f"文件不存在，跳过：{fpath}")
 
-    # 可选：按时间戳排序
-    merged_df = merged_df.sort("ts")
+    if not df_list:
+        raise FileNotFoundError("未找到任何匹配的 CSV 文件。")
+
+    merged_df = pl.concat(df_list).sort("timestamp")
 
     # 保存
-    output_path = os.path.join(output_dir, f"{symbol}_merged.csv")
+    output_filename = f"{symbol}_merged_thr{threshold}_roll{rolling_window}.csv"
+    output_path = os.path.join(output_dir, output_filename)
     merged_df.write_csv(output_path)
     print(f"{symbol} 合并完成，共 {merged_df.shape[0]} 行。保存至：{output_path}")
     return output_path
@@ -289,9 +342,9 @@ if __name__ == "__main__":
     output_directory = "C:/quant/data/binance_resampled_data"
     process_data_by_day_with_multiple_pairs(
         start_date="2025_04_06",
-        end_date="2025_04_20",
-        threshold=0.0002,
-        rolling_window=500,
+        end_date="2025_05_18",
+        threshold=0.0005,
+        rolling_window=200,
         output_dir=output_directory,
         target_instruments=instruments
     )

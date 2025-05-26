@@ -1,3 +1,5 @@
+import numpy as np
+
 def cal_imn_usdt(lev):
     return 200 * lev
 
@@ -39,6 +41,33 @@ def impact_price_pct_bid_row(row: dict, imn: float, levels: int = 2) -> float | 
     if best_bid is None or best_bid <= 0:
         return None
     return (best_bid - impact_price) / best_bid
+
+
+
+def calculate_bid_amount_sum_row(row: dict, start_level: int = 1, end_level: int = 19) -> float | None:
+    total_amount = 0.0
+
+    for i in range(start_level, end_level):
+        col_name = f"lob_bids[{i}].amount"
+        amount = row.get(col_name)
+
+        if amount is not None and not np.isnan(amount):
+            total_amount += amount
+
+    return total_amount
+
+def calculate_ask_amount_sum_row(row: dict, start_level: int = 1, end_level: int = 19) -> float | None:
+    total_amount = 0.0
+
+    for i in range(start_level, end_level):
+        col_name = f"lob_asks[{i}].amount"
+        amount = row.get(col_name)
+
+        if amount is not None and not np.isnan(amount):
+            total_amount += amount
+
+    return total_amount
+
 
 import polars as pl
 
