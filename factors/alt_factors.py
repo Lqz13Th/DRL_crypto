@@ -83,6 +83,19 @@ def factor_short_term_sentiment_volatility(df, window=12):
     sentiment = factor_net_sentiment_5min(df)
     return sentiment.rolling(window).std()
 
+def factor_sentiment_net(df):
+    bull = (
+        df['top_long_short_account_ratio_data_longAccount']
+        + df['top_long_short_position_ratio_data_longAccount']
+        + df['long_short_ratio_data_longAccount']
+    ) / 3
+    bear = (
+        df['top_long_short_account_ratio_data_shortAccount']
+        + df['top_long_short_position_ratio_data_shortAccount']
+        + df['long_short_ratio_data_shortAccount']
+    ) / 3
+    return bull - bear  # >0 多头占优，<0 空头占优
+
 
 # Momentum
 def factor_oi_momentum_3(df):

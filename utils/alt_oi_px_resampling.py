@@ -1,10 +1,7 @@
-import polars as pl
 import os
 
 from tqdm import tqdm
 
-from ppo_algo.datas.high_frequency_data_parser import ParseHFTData
-from utils.polars_expr import rolling_scaled_sigmoid_expr
 from utils.dates_utils import generate_dates
 from factors.lob_factors import *
 from utils.polars_expr import *
@@ -53,14 +50,10 @@ def on_sampling(row, leverage):
     return {
         "impact_price_pct_ask_imn": impact_price_pct_ask_row(row, imn=cal_imn_usdt(leverage)),
         "impact_price_pct_bid_imn": impact_price_pct_bid_row(row, imn=cal_imn_usdt(leverage)),
-        "mid_price": (row["lob_asks[0].price"] + row["lob_bids[0].price"]) / 2,
-        "spread": row["lob_asks[0].price"] - row["lob_bids[0].price"],
         "far_bid_price": row["lob_bids[19].price"],
         "far_ask_price": row["lob_asks[19].price"],
         "best_bid_price": row["lob_bids[0].price"],
         "best_ask_price": row["lob_asks[0].price"],
-        "best_bid_amount": row["lob_bids[0].amount"],
-        "best_ask_amount": row["lob_asks[0].amount"],
         "real_bid_amount_sum": calculate_bid_amount_sum_row(row),
         "real_ask_amount_sum": calculate_ask_amount_sum_row(row),
     }
@@ -76,10 +69,15 @@ def generate_alt_oi_px_bar(
     sampled_datas = []
     sum_buy_size = 0
     sum_sell_size = 0
-
     for row in input_df.iter_rows(named=True):
+
         ts = row['timestamp']
-        px = row['trades_price']
+        trade_px = row['trades_price']
+        bid_px = row['lob_bids[0].price']
+        ask_px = row['lob_asks[0].price']
+
+        px = np.clip(trade_px, bid_px, ask_px)
+
         sz = row['trades_amount']
         side = -1 if row['trades_side'] == 'sell' else 1  # 卖方主导为 -1，买方主导为 1
         px_pct = (px - last_px) / last_px
@@ -93,23 +91,40 @@ def generate_alt_oi_px_bar(
             ts_duration = ts - last_ts
 
             sampled_data = {
+                # raw data
                 "timestamp": ts,
-                "price": px,
-                "sum_buy_size": sum_buy_size,
-                "sum_sell_size": sum_sell_size,
-                "timestamp_duration": ts_duration,
-                "price_pct_change": px_pct,
-                "buy_sell_imbalance": sum_buy_size - sum_sell_size,
-                "trades_side": side,
-                "change_side": 1 if px_pct > 0 else 0,
-                "alt_top_long_short_account_ratio_data_longShortRatio": row['alt_top_long_short_account_ratio_data_longShortRatio'],
-                "alt_top_long_short_position_ratio_data_longShortRatio": row['alt_top_long_short_position_ratio_data_longShortRatio'],
-                "alt_trade_taker_long_short_ratio_data_buySellRatio": row['alt_trade_taker_long_short_ratio_data_buySellRatio'],
-                "alt_long_short_ratio_data_longShortRatio": row['alt_long_short_ratio_data_longShortRatio'],
-                "alt_open_interest_data_sumOpenInterest": row['alt_open_interest_data_sumOpenInterest'],
-                "alt_open_interest_data_sumOpenInterestValue": row['alt_open_interest_data_sumOpenInterestValue'],
-                "alt_factor_short_term_oi_trend": row['alt_factor_short_term_oi_trend'],
-                "alt_factor_long_term_oi_trend": row['alt_factor_long_term_oi_trend'],
+                "px": px,
+                "sum_buy_sz": sum_buy_size,
+                "sum_sell_sz": sum_sell_size,
+                "ts_duration": ts_duration,
+                "px_pct": px_pct,
+                "bs_imbalance": sum_buy_size - sum_sell_size,
+                "top_acc_longShortRatio": row['alt_top_long_short_account_ratio_data_longShortRatio'],
+                "top_pos_longShortRatio": row['alt_top_long_short_position_ratio_data_longShortRatio'],
+                "acc_longShortRatio": row['alt_long_short_ratio_data_longShortRatio'],
+                "trade_taker_buySellRatio": row['alt_trade_taker_long_short_ratio_data_buySellRatio'],
+                "trade_taker_buy_vol": row['alt_trade_taker_long_short_ratio_data_buyVol'],
+                "trade_taker_sell_vol": row['alt_trade_taker_long_short_ratio_data_sellVol'],
+                "sum_open_interest": row['alt_open_interest_data_sumOpenInterest'],
+                # factor raw data
+                "raw_factor_oi_change": row['alt_factor_oi_change'],
+                "raw_factor_short_term_oi_volatility": row['alt_factor_short_term_oi_volatility'],
+                "raw_factor_long_term_oi_volatility": row['alt_factor_long_term_oi_volatility'],
+                "raw_factor_short_term_oi_trend": row['alt_factor_short_term_oi_trend'],
+                "raw_trade_taker_buy_sell_vol_diff": row['alt_factor_long_term_oi_trend'],
+                "raw_factor_long_term_oi_trend": row['alt_factor_buy_sell_vlm_diff'],
+                "raw_factor_sentiment_net": row['alt_factor_sentiment_net'],
+
+                # factor data
+                "z_factor_oi_change": row['alt_z_factor_oi_change'],
+                "z_factor_short_term_oi_volatility": row['alt_z_factor_short_term_oi_volatility'],
+                "z_factor_long_term_oi_volatility": row['alt_z_factor_long_term_oi_volatility'],
+                "z_factor_short_term_oi_trend": row['alt_z_factor_short_term_oi_trend'],
+                "z_factor_long_term_oi_trend": row['alt_z_factor_long_term_oi_trend'],
+                "z_factor_buy_sell_vlm_diff": row['alt_z_factor_buy_sell_vlm_diff'],
+                "z_factor_sentiment_net": row['alt_z_factor_sentiment_net'],
+
+                # aux data
                 **on_sampling(row, 125),
             }
 
@@ -127,69 +142,113 @@ def generate_alt_oi_px_bar(
     return sampled_df
 
 
+def z_score_expr(col_name: str, window: int) -> pl.Expr:
+    return (
+            (pl.col(col_name) - pl.col(col_name).rolling_mean(window))
+            / (pl.col(col_name).rolling_std(window) + 1e-6)
+    ).alias(f"z_{col_name}")
+
+
 def cal_factors_with_sampled_data(
         input_path: str,
+        window: int,
 ) -> pl.DataFrame:
     EPSILON = 1e-6
 
     factors_df = (
         pl
         .scan_csv(input_path)
-        .with_columns(
-            pl.col("price_pct_change").rolling_sum(window_size=50).alias("rolling_px_pct_sum"),
-        )
         .with_columns([
-            pl.col("price").pct_change().alias("ret_1"),
-            pl.col("price").pct_change().shift(1).alias("ret_1_lag"),
-            pl.col("price").pct_change().rolling_mean(5).alias("ret_mean_5"),
-            pl.col("price").pct_change().rolling_mean(10).alias("ret_mean_10"),
-            pl.col("price").rolling_std(10).alias("volatility_10"),
+            (1 / (pl.col("ts_duration").pct_change().rolling_mean(window) + EPSILON))
+            .alias(f"ts_velo_rol_mean_{window}"),
+
+            (pl.col("bs_imbalance") * (pl.col("real_bid_amount_sum") - pl.col("real_ask_amount_sum")))
+            .rolling_mean(window)
+            .alias(f"factor_bs_lob_ratio_rol_mean_{window}"),
+
+            (pl.col("far_bid_price") - pl.col("best_bid_price")).abs().rolling_mean(window)
+            .alias(f"bid_px_gap_rol_mean_{window}"),
+
+            (pl.col("far_ask_price") - pl.col("best_ask_price")).abs().rolling_mean(window)
+            .alias(f"ask_px_gap_rol_mean_{window}"),
+
+            pl.col("price").pct_change().rolling_mean(10).alias("ret_rol_mean_10"),
+            pl.col("price").pct_change().rolling_mean(50).alias("ret_rol_mean_50"),
+            pl.col("price").pct_change().rolling_mean(100).alias("ret_rol_mean_100"),
+            pl.col("price").pct_change().rolling_mean(window).alias(f"ret_rol_mean_{window}"),
 
             ((pl.col("sum_buy_size") - pl.col("sum_sell_size")) /
              (pl.col("sum_buy_size") + pl.col("sum_sell_size") + EPSILON))
-            .alias("buy_sell_ratio"),
+            .rolling_mean(window).alias(f"bs_ratio_rol_mean_{window}"),
 
-            pl.col("sum_buy_size").rolling_mean(10).alias("avg_buy_size_10"),
-            pl.col("sum_sell_size").rolling_mean(10).alias("avg_sell_size_10"),
-
-            pl.col("price_pct_change").rolling_sum(window_size=50).alias("rolling_px_pct_sum"),
-
-            pl.col("change_side").rolling_sum(5).alias("change_side_sum_5"),
+            pl.col("price_pct_change").rolling_sum(window).alias(f"px_pct_rol_sum_{window}"),
         ])
         .with_columns([
-            (pl.col("rolling_px_pct_sum") / pl.col("alt_factor_short_term_oi_trend"))
-            .alias("px_short_oi_divergence"),
+            (pl.col(f"bs_lob_ratio_rol_mean_{window}") * pl.col(f"ret_rol_mean_{window}"))
+            .alias(f"factor_px_sz_struc_momentum_rol_mean_{window}"),
 
-            (pl.col("alt_factor_short_term_oi_trend") - pl.col("alt_factor_long_term_oi_trend"))
-            .alias("oi_trend_slope"),
+            (pl.col(f"ts_velo_rol_mean_{window}") * pl.col(f"ret_rol_mean_{window}"))
+            .alias(f"factor_px_velo_rol_mean_{window}"),
 
-            (pl.col("price").diff().rolling_mean(100) - pl.col("alt_factor_long_term_oi_trend"))
+            ((pl.col(f"bid_px_gap_rol_mean_{window}") * pl.col("real_bid_amount_sum")) ** 2 -
+             (pl.col(f"ask_px_gap_rol_mean_{window}") * pl.col("real_ask_amount_sum")) ** 2)
+            .rolling_mean(window)
+            .alias(f"factor_lob_sz_imba_rol_mean_{window}"),
+
+        ])
+        .with_columns([
+            z_score_expr(f"factor_bs_lob_ratio_rol_mean_{window}", window),
+            z_score_expr(f"factor_px_sz_struc_momentum_rol_mean_{window}", window),
+            z_score_expr(f"factor_px_velo_rol_mean_{window}", window),
+            z_score_expr(f"factor_lob_sz_imba_rol_mean_{window}", window),
+        ])
+        .with_columns([
+            (pl.col(f"px_pct_rol_sum_{window}") / (pl.col("z_factor_short_term_oi_trend").abs() + EPSILON))
             .alias("factor_px_oi_divergence"),
 
-            (pl.col("rolling_px_pct_sum") * pl.col("sum_buy_size"))
-            .alias("factor_momentum_volume"),
+            (pl.col("z_factor_short_term_oi_trend") - pl.col("z_factor_long_term_oi_trend"))
+            .alias("factor_oi_trend_slope"),
 
-            (pl.col("rolling_px_pct_sum") * (pl.col("sum_buy_size") + pl.col("sum_sell_size")))
-            .alias("impact_momentum"),
+            (pl.col(f"px_pct_rol_sum_{window}") * pl.col(f"sum_sz_rol_mean_{window}"))
+            .alias("factor_impact_momentum"),
 
-            (pl.col("rolling_px_pct_sum") / (pl.col("sum_buy_size") + pl.col("sum_sell_size") + 1e-6))
-            .alias("impact_sensitivity"),
+            (pl.col(f"px_pct_rol_sum_{window}") / (pl.col(f"sum_sz_rol_mean_{window}") + EPSILON))
+            .alias("factor_impact_sensitivity"),
+
+            (pl.col(f"px_pct_rol_sum_{window}") * pl.col(f"bs_ratio_rol_mean_{window}"))
+            .alias("factor_orderflow_sz_momentum"),
         ])
         .with_columns([
-            ((pl.col("ret_1") > 0).cast(pl.Int8) * pl.col("buy_sell_ratio"))
-            .alias("momentum_confirmed_by_orderflow"),
+            z_score_expr("factor_px_oi_divergence", window),
+            z_score_expr("factor_oi_trend_slope", window),
+            z_score_expr("factor_impact_momentum", window),
+            z_score_expr("factor_impact_sensitivity", window),
+            z_score_expr("factor_orderflow_sz_momentum", window),
+        ])
+        .with_columns([
+            (pl.col("z_factor_px_oi_divergence") * pl.col("z_factor_orderflow_sz_momentum"))
+            .alias("factor_oi_breakout_signal"),
 
-            ((pl.col("px_short_oi_divergence") > 0).cast(pl.Int8) * pl.col("impact_momentum"))
-            .alias("oi_long_breakout_signal"),
+            (pl.col("z_factor_impact_momentum") * pl.col("z_factor_oi_trend_slope"))
+            .alias("factor_momentum_trend_confirm"),
 
-            ((pl.col("px_short_oi_divergence") < 0).cast(pl.Int8) * pl.col("impact_momentum"))
-            .alias("oi_short_breakout_signal"),
+            (pl.col("z_factor_orderflow_sz_momentum") * pl.col("z_factor_sentiment_net").abs())
+            .alias("factor_order_sentiment_divergence"),
+
+            (pl.col("z_factor_impact_momentum") * pl.col("z_factor_oi_change"))
+            .alias("factor_oi_momentum_punch"),
+
+        ])
+        .with_columns([
+            z_score_expr("factor_oi_breakout_signal", window),
+            z_score_expr("factor_momentum_trend_confirm", window),
+            z_score_expr("factor_order_sentiment_divergence", window),
+            z_score_expr("factor_oi_momentum_punch", window),
         ])
         .drop_nulls()
         .collect()
     )
     return factors_df
-
 
 def process_data_by_day_with_multiple_pairs(
         start_date: str,
@@ -262,7 +321,7 @@ def process_data_by_day_with_multiple_pairs(
 
             output_file_path = os.path.join(
                 symbol_folder,
-                f"resampled_data_{ins}_{date}_threshold{threshold}_rolling{rolling_window}.csv"
+                f"resampled_data_{ins}_{date}_threshold{threshold}.csv"
             )
 
             pct_sampling.write_csv(output_file_path)
@@ -284,7 +343,6 @@ def process_data_by_day_with_multiple_pairs(
         output_filename = f"{ins}_factors_threshold{threshold}_rolling{rolling_window}.csv"
         output_path = os.path.join(output_dir, output_filename)
 
-        # normalized_factors_df = rolling_normalize_data(factors_df, rolling_window).drop_nulls()
         factors_df.write_csv(output_path)
         print(f"{ins} 因子计算完成，共 {factors_df.shape[0]} 行。保存至：{output_path}")
 
@@ -300,13 +358,13 @@ def merge_all_csvs_for_symbol(
     symbol_folder = os.path.join(input_dir, symbol)
 
     target_files = [
-        f"resampled_data_{symbol}_{date}_threshold{threshold}_rolling{rolling_window}.csv"
+        f"resampled_data_{symbol}_{date}_threshold{threshold}.csv"
         for date in dates_list
     ]
 
     df_list = []
-    for fname in target_files:
-        fpath = os.path.join(symbol_folder, fname)
+    for file_name in target_files:
+        fpath = os.path.join(symbol_folder, file_name)
         if os.path.exists(fpath):
             df_to_merge = pl.read_csv(fpath)
             print(f"reading files: {fpath}")
@@ -342,9 +400,9 @@ if __name__ == "__main__":
     output_directory = "C:/quant/data/binance_resampled_data"
     process_data_by_day_with_multiple_pairs(
         start_date="2025_04_06",
-        end_date="2025_05_18",
+        end_date="2025_06_04",
         threshold=0.0005,
-        rolling_window=200,
+        rolling_window=1000,
         output_dir=output_directory,
         target_instruments=instruments
     )
