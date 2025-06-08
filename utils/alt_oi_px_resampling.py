@@ -107,7 +107,7 @@ def generate_alt_oi_px_bar(
                 "trade_taker_sell_vol": row['alt_trade_taker_long_short_ratio_data_sellVol'],
                 "sum_open_interest": row['alt_open_interest_data_sumOpenInterest'],
                 # factor raw data
-                "raw_factor_oi_change": row['alt_factor_oi_change'],
+                "raw_factor_oi_change_sum": row['alt_factor_oi_change_sum'],
                 "raw_factor_short_term_oi_volatility": row['alt_factor_short_term_oi_volatility'],
                 "raw_factor_long_term_oi_volatility": row['alt_factor_long_term_oi_volatility'],
                 "raw_factor_short_term_oi_trend": row['alt_factor_short_term_oi_trend'],
@@ -116,7 +116,7 @@ def generate_alt_oi_px_bar(
                 "raw_factor_sentiment_net": row['alt_factor_sentiment_net'],
 
                 # factor data
-                "z_factor_oi_change": row['alt_z_factor_oi_change'],
+                "z_factor_oi_change": row['alt_z_factor_oi_change_sum'],
                 "z_factor_short_term_oi_volatility": row['alt_z_factor_short_term_oi_volatility'],
                 "z_factor_long_term_oi_volatility": row['alt_z_factor_long_term_oi_volatility'],
                 "z_factor_short_term_oi_trend": row['alt_z_factor_short_term_oi_trend'],
@@ -148,6 +148,29 @@ def z_score_expr(col_name: str, window: int) -> pl.Expr:
             / (pl.col(col_name).rolling_std(window) + 1e-6)
     ).alias(f"z_{col_name}")
 
+def divergence_expr_with_sign(window: int):
+    px_sign = (
+        pl.when(pl.col(f"z_px_pct_rol_sum_{window}") > 0)
+          .then(1)
+          .when(pl.col(f"z_px_pct_rol_sum_{window}") < 0)
+          .then(-1)
+          .otherwise(0)
+    )
+
+    oi_sign = (
+        pl.when(pl.col("z_factor_oi_change") > 0)
+        .then(1)
+        .when(pl.col("z_factor_oi_change") < 0)
+        .then(-1)
+        .otherwise(0)
+    )
+
+    is_divergent = (px_sign * oi_sign) < 0
+
+    return  (
+        ((pl.col(f"z_px_pct_rol_sum_{window}") + pl.col("z_factor_oi_change")) * is_divergent.cast(pl.Int8))
+        .alias("factor_oi_px_divergence_with_sign")
+    )
 
 def cal_factors_with_sampled_data(
         input_path: str,
@@ -158,14 +181,15 @@ def cal_factors_with_sampled_data(
     factors_df = (
         pl
         .scan_csv(input_path)
-
         .with_columns([
+            pl.col("px_pct").rolling_sum(20).alias(f"px_pct_rol_sum_{20}"),
+            pl.col("px_pct").rolling_sum(40).alias(f"px_pct_rol_sum_{40}"),
+            pl.col("px_pct").rolling_sum(80).alias(f"px_pct_rol_sum_{80}"),
+            pl.col("px_pct").rolling_sum(160).alias(f"px_pct_rol_sum_{160}"),
+            pl.col("px_pct").rolling_sum(window).alias(f"px_pct_rol_sum_{window}"),
+
             (-pl.col("ts_duration").rolling_mean(window).add(EPSILON).log())
             .alias(f"ts_velo_rol_mean_{window}"),
-
-            (pl.col("bs_imbalance") * (pl.col("real_bid_amount_sum") - pl.col("real_ask_amount_sum")))
-            .rolling_mean(window)
-            .alias(f"factor_bs_lob_ratio_rol_mean_{window}"),
 
             (pl.col("far_bid_price") - pl.col("best_bid_price")).abs().rolling_mean(window)
             .alias(f"bid_px_gap_rol_mean_{window}"),
@@ -173,10 +197,11 @@ def cal_factors_with_sampled_data(
             (pl.col("far_ask_price") - pl.col("best_ask_price")).abs().rolling_mean(window)
             .alias(f"ask_px_gap_rol_mean_{window}"),
 
-            pl.col("px").pct_change().rolling_mean(10).alias("ret_rol_mean_10"),
-            pl.col("px").pct_change().rolling_mean(50).alias("ret_rol_mean_50"),
-            pl.col("px").pct_change().rolling_mean(100).alias("ret_rol_mean_100"),
-            pl.col("px").pct_change().rolling_mean(window).alias(f"ret_rol_mean_{window}"),
+            (pl.col("real_bid_amount_sum") - pl.col("real_ask_amount_sum"))
+            .rolling_mean(window)
+            .alias(f"lob_ratio_rol_mean_{window}"),
+
+            pl.col("bs_imbalance").rolling_mean(window).alias(f"bs_imba_rol_mean_{window}"),
 
             (pl.col("sum_buy_sz") + pl.col("sum_sell_sz"))
             .rolling_mean(window)
@@ -186,53 +211,79 @@ def cal_factors_with_sampled_data(
              (pl.col("sum_buy_sz") + pl.col("sum_sell_sz") + EPSILON))
             .rolling_mean(window)
             .alias(f"bs_ratio_rol_mean_{window}"),
-
-            pl.col("px_pct").rolling_sum(window).alias(f"px_pct_rol_sum_{window}"),
         ])
         .with_columns([
-            (pl.col(f"factor_bs_lob_ratio_rol_mean_{window}") * pl.col(f"ret_rol_mean_{window}"))
-            .alias(f"factor_px_sz_struc_momentum_rol_mean_{window}"),
+            (pl.col(f"sum_sz_rol_mean_{window}") * pl.col(f"px_pct_rol_sum_{window}"))
+            .alias(f"sum_sz_px_pct_rol_sum_{window}"),
 
-            (pl.col(f"ts_velo_rol_mean_{window}") * pl.col(f"ret_rol_mean_{window}"))
-            .alias(f"factor_px_velo_rol_mean_{window}"),
+            (pl.col(f"ts_velo_rol_mean_{window}") * pl.col(f"px_pct_rol_sum_{window}"))
+            .alias(f"px_velo_rol_mean_{window}"),
 
             ((pl.col(f"bid_px_gap_rol_mean_{window}") * pl.col("real_bid_amount_sum")) ** 2 -
              (pl.col(f"ask_px_gap_rol_mean_{window}") * pl.col("real_ask_amount_sum")) ** 2)
             .rolling_mean(window)
-            .alias(f"factor_lob_sz_imba_rol_mean_{window}"),
+            .alias(f"lob_sz_imba_rol_mean_{window}"),
 
+            (pl.col("sum_open_interest") - pl.col(f"px_pct_rol_sum_{window}"))
+            .alias(f"oi_px_diff{window}"),
+
+            ((pl.col(f"px_pct_rol_sum_{window}") > 0) & (pl.col("raw_factor_oi_change_sum") < 0))
+            .cast(pl.Float64)
+            .alias("oi_up_divergence"),
+
+            ((pl.col(f"px_pct_rol_sum_{window}") < 0) & (pl.col("raw_factor_oi_change_sum") > 0))
+            .cast(pl.Float64)
+            .alias("oi_down_divergence"),
         ])
         .with_columns([
-            z_score_expr(f"factor_bs_lob_ratio_rol_mean_{window}", window),
-            z_score_expr(f"factor_px_sz_struc_momentum_rol_mean_{window}", window),
-            z_score_expr(f"factor_px_velo_rol_mean_{window}", window),
-            z_score_expr(f"factor_lob_sz_imba_rol_mean_{window}", window),
+            z_score_expr(f"px_pct_rol_sum_{20}", window),
+            z_score_expr(f"px_pct_rol_sum_{40}", window),
+            z_score_expr(f"px_pct_rol_sum_{80}", window),
+            z_score_expr(f"px_pct_rol_sum_{160}", window),
+            z_score_expr(f"px_pct_rol_sum_{window}", window),
+            z_score_expr(f"ts_velo_rol_mean_{window}", window),
+            z_score_expr(f"bid_px_gap_rol_mean_{window}", window),
+            z_score_expr(f"ask_px_gap_rol_mean_{window}", window),
+            z_score_expr(f"lob_ratio_rol_mean_{window}", window),
+            z_score_expr(f"bs_imba_rol_mean_{window}", window),
+            z_score_expr(f"sum_sz_rol_mean_{window}", window),
+            z_score_expr(f"bs_ratio_rol_mean_{window}", window),
+            z_score_expr(f"sum_sz_px_pct_rol_sum_{window}", window),
+            z_score_expr(f"px_velo_rol_mean_{window}", window),
+            z_score_expr(f"lob_sz_imba_rol_mean_{window}", window),
+            z_score_expr(f"oi_px_diff{window}", window),
+            z_score_expr("oi_up_divergence", window),
+            z_score_expr("oi_down_divergence", window),
         ])
         .with_columns([
-            (pl.col(f"px_pct_rol_sum_{window}") / (pl.col("z_factor_short_term_oi_trend").abs() + EPSILON))
+            (pl.col(f"z_px_pct_rol_sum_{window}") / (pl.col("z_factor_short_term_oi_trend").abs() + EPSILON))
             .alias("factor_px_oi_divergence"),
 
             (pl.col("z_factor_short_term_oi_trend") - pl.col("z_factor_long_term_oi_trend"))
             .alias("factor_oi_trend_slope"),
 
-            (pl.col(f"px_pct_rol_sum_{window}") * pl.col(f"sum_sz_rol_mean_{window}"))
+            (pl.col(f"z_px_pct_rol_sum_{window}") * pl.col(f"z_sum_sz_rol_mean_{window}"))
             .alias("factor_impact_momentum"),
 
-            (pl.col(f"px_pct_rol_sum_{window}") / (pl.col(f"sum_sz_rol_mean_{window}") + EPSILON))
+            (pl.col(f"z_px_pct_rol_sum_{window}") / (pl.col(f"z_sum_sz_rol_mean_{window}") + EPSILON))
             .alias("factor_impact_sensitivity"),
 
-            (pl.col(f"px_pct_rol_sum_{window}") * pl.col(f"bs_ratio_rol_mean_{window}"))
+            (pl.col(f"z_px_pct_rol_sum_{window}") * pl.col(f"z_bs_ratio_rol_mean_{window}"))
             .alias("factor_orderflow_sz_momentum"),
+
+            divergence_expr_with_sign(window),
         ])
         .with_columns([
-            z_score_expr("factor_px_oi_divergence", window),
+            z_score_expr("factor_oi_px_divergence_with_sign", window),
+
+            z_score_expr("factor_px_oi_force", window),
             z_score_expr("factor_oi_trend_slope", window),
             z_score_expr("factor_impact_momentum", window),
             z_score_expr("factor_impact_sensitivity", window),
             z_score_expr("factor_orderflow_sz_momentum", window),
         ])
         .with_columns([
-            (pl.col("z_factor_px_oi_divergence") * pl.col("z_factor_orderflow_sz_momentum"))
+            (pl.col("z_factor_px_oi_force") * pl.col("z_factor_orderflow_sz_momentum"))
             .alias("factor_oi_breakout_signal"),
 
             (pl.col("z_factor_impact_momentum") * pl.col("z_factor_oi_trend_slope"))

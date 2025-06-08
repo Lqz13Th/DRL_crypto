@@ -20,7 +20,7 @@ def rolling_zscore(series, window=72, clip_value=5):
 
 def calculate_factors(alt_factor_df, zscore_window=72):
     alt_factor_df = alt_factor_df.copy()
-    alt_factor_df['factor_oi_change'] = factor_oi_change(alt_factor_df)
+    alt_factor_df['factor_oi_change_sum'] = factor_oi_change_sum(alt_factor_df)
     alt_factor_df['factor_short_term_oi_volatility'] = factor_short_term_volatility(alt_factor_df)
     alt_factor_df['factor_long_term_oi_volatility'] = factor_long_term_volatility(alt_factor_df)
     alt_factor_df['factor_short_term_oi_trend'] = factor_short_term_oi_trend(alt_factor_df)

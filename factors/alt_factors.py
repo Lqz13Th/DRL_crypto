@@ -2,8 +2,8 @@
 def factor_oi_ratio(df):
     return df['open_interest_data_sumOpenInterest'] / df['open_interest_data_sumOpenInterest'].rolling(3).mean()
 
-def factor_oi_change(df):
-    return df['open_interest_data_sumOpenInterest'].pct_change(fill_method=None)
+def factor_oi_change_sum(df, window=12):
+    return df['open_interest_data_sumOpenInterest'].pct_change(fill_method=None).rolling(window).sum()
 
 def factor_oi_value_change(df):
     return df['open_interest_data_sumOpenInterestValue'].pct_change(fill_method=None)
