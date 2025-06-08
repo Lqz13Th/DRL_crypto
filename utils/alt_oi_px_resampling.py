@@ -168,7 +168,7 @@ def divergence_expr_with_sign(window: int):
     is_divergent = (px_sign * oi_sign) < 0
 
     return  (
-        ((pl.col(f"z_px_pct_rol_sum_{window}") + pl.col("z_factor_oi_change")) * is_divergent.cast(pl.Int8))
+        ((pl.col(f"z_px_pct_rol_sum_{window}") + pl.col("z_factor_oi_change").abs()) * is_divergent.cast(pl.Int8))
         .alias("factor_oi_px_divergence_with_sign")
     )
 
