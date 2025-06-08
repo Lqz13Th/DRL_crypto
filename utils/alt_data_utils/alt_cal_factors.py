@@ -29,7 +29,7 @@ def calculate_factors(alt_factor_df, zscore_window=72):
     alt_factor_df['factor_sentiment_net'] = factor_sentiment_net(alt_factor_df)
 
     factor_columns = [
-        'factor_oi_change',
+        'factor_oi_change_sum',
         'factor_short_term_oi_volatility',
         'factor_long_term_oi_volatility',
         'factor_short_term_oi_trend',
