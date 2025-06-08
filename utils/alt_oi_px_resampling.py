@@ -158,8 +158,9 @@ def cal_factors_with_sampled_data(
     factors_df = (
         pl
         .scan_csv(input_path)
+
         .with_columns([
-            (1 / (pl.col("ts_duration").pct_change().rolling_mean(window) + EPSILON))
+            (-pl.col("ts_duration").rolling_mean(window).add(EPSILON).log())
             .alias(f"ts_velo_rol_mean_{window}"),
 
             (pl.col("bs_imbalance") * (pl.col("real_bid_amount_sum") - pl.col("real_ask_amount_sum")))
@@ -172,19 +173,24 @@ def cal_factors_with_sampled_data(
             (pl.col("far_ask_price") - pl.col("best_ask_price")).abs().rolling_mean(window)
             .alias(f"ask_px_gap_rol_mean_{window}"),
 
-            pl.col("price").pct_change().rolling_mean(10).alias("ret_rol_mean_10"),
-            pl.col("price").pct_change().rolling_mean(50).alias("ret_rol_mean_50"),
-            pl.col("price").pct_change().rolling_mean(100).alias("ret_rol_mean_100"),
-            pl.col("price").pct_change().rolling_mean(window).alias(f"ret_rol_mean_{window}"),
+            pl.col("px").pct_change().rolling_mean(10).alias("ret_rol_mean_10"),
+            pl.col("px").pct_change().rolling_mean(50).alias("ret_rol_mean_50"),
+            pl.col("px").pct_change().rolling_mean(100).alias("ret_rol_mean_100"),
+            pl.col("px").pct_change().rolling_mean(window).alias(f"ret_rol_mean_{window}"),
 
-            ((pl.col("sum_buy_size") - pl.col("sum_sell_size")) /
-             (pl.col("sum_buy_size") + pl.col("sum_sell_size") + EPSILON))
-            .rolling_mean(window).alias(f"bs_ratio_rol_mean_{window}"),
+            (pl.col("sum_buy_sz") + pl.col("sum_sell_sz"))
+            .rolling_mean(window)
+            .alias(f"sum_sz_rol_mean_{window}"),
 
-            pl.col("price_pct_change").rolling_sum(window).alias(f"px_pct_rol_sum_{window}"),
+            ((pl.col("sum_buy_sz") - pl.col("sum_sell_sz")) /
+             (pl.col("sum_buy_sz") + pl.col("sum_sell_sz") + EPSILON))
+            .rolling_mean(window)
+            .alias(f"bs_ratio_rol_mean_{window}"),
+
+            pl.col("px_pct").rolling_sum(window).alias(f"px_pct_rol_sum_{window}"),
         ])
         .with_columns([
-            (pl.col(f"bs_lob_ratio_rol_mean_{window}") * pl.col(f"ret_rol_mean_{window}"))
+            (pl.col(f"factor_bs_lob_ratio_rol_mean_{window}") * pl.col(f"ret_rol_mean_{window}"))
             .alias(f"factor_px_sz_struc_momentum_rol_mean_{window}"),
 
             (pl.col(f"ts_velo_rol_mean_{window}") * pl.col(f"ret_rol_mean_{window}"))
@@ -338,6 +344,7 @@ def process_data_by_day_with_multiple_pairs(
 
         factors_df = cal_factors_with_sampled_data(
             input_path=output_path,
+            window=rolling_window
         )
 
         output_filename = f"{ins}_factors_threshold{threshold}_rolling{rolling_window}.csv"
@@ -395,13 +402,13 @@ if __name__ == "__main__":
     from ppo_algo.datas.high_frequency_data_parser import ParseHFTData
 
 
-    # instruments = ["BTCUSDT", "ETHUSDT", "FILUSDT", "GUNUSDT", "JASMYUSDT"]
-    instruments = ["BTCUSDT"]
+    instruments = ["BTCUSDT", "ETHUSDT", "FILUSDT", "GUNUSDT", "JASMYUSDT"]
+    # instruments = ["BTCUSDT"]
     output_directory = "C:/quant/data/binance_resampled_data"
     process_data_by_day_with_multiple_pairs(
         start_date="2025_04_06",
         end_date="2025_06_04",
-        threshold=0.0005,
+        threshold=0.001,
         rolling_window=1000,
         output_dir=output_directory,
         target_instruments=instruments
