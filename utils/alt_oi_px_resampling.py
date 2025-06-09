@@ -144,9 +144,13 @@ def generate_alt_oi_px_bar(
 
 def z_score_expr(col_name: str, window: int) -> pl.Expr:
     return (
-            (pl.col(col_name) - pl.col(col_name).rolling_mean(window))
-            / (pl.col(col_name).rolling_std(window) + 1e-6)
-    ).alias(f"z_{col_name}")
+            (pl.col(col_name) - pl.col(col_name)
+             .rolling_mean(window, min_periods=1)
+             .fill_null(strategy="zero"))
+            / (pl.col(col_name)
+               .rolling_std(window, min_periods=1)
+               .fill_nan(0) + 1e-6)
+    ).fill_null(0).alias(f"z_{col_name}")
 
 def divergence_expr_with_sign(window: int):
     px_sign = (
@@ -225,14 +229,20 @@ def cal_factors_with_sampled_data(
             .alias(f"lob_sz_imba_rol_mean_{window}"),
 
             (pl.col("sum_open_interest") - pl.col(f"px_pct_rol_sum_{window}"))
-            .alias(f"oi_px_diff{window}"),
+            .alias(f"oi_px_diff_{window}"),
 
-            ((pl.col(f"px_pct_rol_sum_{window}") > 0) & (pl.col("raw_factor_oi_change_sum") < 0))
-            .cast(pl.Float64)
+            pl.when(
+                (pl.col(f"px_pct_rol_sum_{window}") > 0) & (pl.col("raw_factor_oi_change_sum") < 0)
+            ).then(
+                pl.col(f"px_pct_rol_sum_{window}") * pl.col("raw_factor_oi_change_sum").abs()
+            ).otherwise(0.0)
             .alias("oi_up_divergence"),
 
-            ((pl.col(f"px_pct_rol_sum_{window}") < 0) & (pl.col("raw_factor_oi_change_sum") > 0))
-            .cast(pl.Float64)
+            pl.when(
+                (pl.col(f"px_pct_rol_sum_{window}") < 0) & (pl.col("raw_factor_oi_change_sum") > 0)
+            ).then(
+                pl.col(f"px_pct_rol_sum_{window}") * pl.col("raw_factor_oi_change_sum").abs()
+            ).otherwise(0.0)
             .alias("oi_down_divergence"),
         ])
         .with_columns([
@@ -251,13 +261,15 @@ def cal_factors_with_sampled_data(
             z_score_expr(f"sum_sz_px_pct_rol_sum_{window}", window),
             z_score_expr(f"px_velo_rol_mean_{window}", window),
             z_score_expr(f"lob_sz_imba_rol_mean_{window}", window),
-            z_score_expr(f"oi_px_diff{window}", window),
+            z_score_expr(f"oi_px_diff_{window}", window),
             z_score_expr("oi_up_divergence", window),
             z_score_expr("oi_down_divergence", window),
         ])
         .with_columns([
+            (pl.col("z_oi_up_divergence") + pl.col("z_oi_down_divergence")).alias("oi_di"),
+
             (pl.col(f"z_px_pct_rol_sum_{window}") / (pl.col("z_factor_short_term_oi_trend").abs() + EPSILON))
-            .alias("factor_px_oi_divergence"),
+            .alias("factor_px_oi_force"),
 
             (pl.col("z_factor_short_term_oi_trend") - pl.col("z_factor_long_term_oi_trend"))
             .alias("factor_oi_trend_slope"),
@@ -274,8 +286,8 @@ def cal_factors_with_sampled_data(
             divergence_expr_with_sign(window),
         ])
         .with_columns([
+            z_score_expr("oi_di", window),
             z_score_expr("factor_oi_px_divergence_with_sign", window),
-
             z_score_expr("factor_px_oi_force", window),
             z_score_expr("factor_oi_trend_slope", window),
             z_score_expr("factor_impact_momentum", window),
@@ -286,7 +298,7 @@ def cal_factors_with_sampled_data(
             (pl.col("z_factor_px_oi_force") * pl.col("z_factor_orderflow_sz_momentum"))
             .alias("factor_oi_breakout_signal"),
 
-            (pl.col("z_factor_impact_momentum") * pl.col("z_factor_oi_trend_slope"))
+            (pl.col("z_factor_impact_momentum") * pl.col("z_factor_oi_trend_slope").abs())
             .alias("factor_momentum_trend_confirm"),
 
             (pl.col("z_factor_orderflow_sz_momentum") * pl.col("z_factor_sentiment_net").abs())
@@ -313,7 +325,8 @@ def process_data_by_day_with_multiple_pairs(
         threshold: float,
         rolling_window: int,
         output_dir: str,
-        target_instruments: list
+        target_instruments: list,
+        resample: bool,
 ):
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
@@ -351,38 +364,39 @@ def process_data_by_day_with_multiple_pairs(
 
         print(alt_df)
 
-        for date in tqdm(dates_list, desc='Processing bars', total=len(dates_list)):
-            tardis_trade_path = tardis_trade_path_template.format(date=date, symbol=ins)
-            tardis_lob_path = tardis_lob_path_template.format(date=date, symbol=ins)
-            trade_df = psd.parse_trade_data_tardis(tardis_trade_path)
-            lob_df = psd.parse_lob_data_tardis(tardis_lob_path)
-            ts_min = min(trade_df['timestamp'].min(), lob_df['timestamp'].min()) - 1 * 1000 * 1000
-            ts_max = max(trade_df['timestamp'].max(), lob_df['timestamp'].max())
+        if resample:
+            for date in tqdm(dates_list, desc='Processing bars', total=len(dates_list)):
+                tardis_trade_path = tardis_trade_path_template.format(date=date, symbol=ins)
+                tardis_lob_path = tardis_lob_path_template.format(date=date, symbol=ins)
+                trade_df = psd.parse_trade_data_tardis(tardis_trade_path)
+                lob_df = psd.parse_lob_data_tardis(tardis_lob_path)
+                ts_min = min(trade_df['timestamp'].min(), lob_df['timestamp'].min()) - 1 * 1000 * 1000
+                ts_max = max(trade_df['timestamp'].max(), lob_df['timestamp'].max())
 
-            alt_daily_df = alt_df.filter(
-                (pl.col('timestamp') >= ts_min) &
-                (pl.col('timestamp') <= ts_max)
-            )
-            merged_df = merge_dataframes_on_timestamp(
-                [trade_df, lob_df, alt_daily_df],
-                ["trades_", "lob_", "alt_"]
-            )
-            del trade_df, lob_df, alt_daily_df,
+                alt_daily_df = alt_df.filter(
+                    (pl.col('timestamp') >= ts_min) &
+                    (pl.col('timestamp') <= ts_max)
+                )
+                merged_df = merge_dataframes_on_timestamp(
+                    [trade_df, lob_df, alt_daily_df],
+                    ["trades_", "lob_", "alt_"]
+                )
+                del trade_df, lob_df, alt_daily_df,
 
-            auto_filled_df = auto_fill_dataframes_with_old_data(merged_df).drop_nulls()
-            print(auto_filled_df)
-            pct_sampling = generate_alt_oi_px_bar(auto_filled_df, threshold)
-            symbol_folder = os.path.join(output_dir, ins)
-            if not os.path.exists(symbol_folder):
-                os.makedirs(symbol_folder)
+                auto_filled_df = auto_fill_dataframes_with_old_data(merged_df).drop_nulls()
+                print(auto_filled_df)
+                pct_sampling = generate_alt_oi_px_bar(auto_filled_df, threshold)
+                symbol_folder = os.path.join(output_dir, ins)
+                if not os.path.exists(symbol_folder):
+                    os.makedirs(symbol_folder)
 
-            output_file_path = os.path.join(
-                symbol_folder,
-                f"resampled_data_{ins}_{date}_threshold{threshold}.csv"
-            )
+                output_file_path = os.path.join(
+                    symbol_folder,
+                    f"resampled_data_{ins}_{date}_threshold{threshold}.csv"
+                )
 
-            pct_sampling.write_csv(output_file_path)
-            del merged_df, pct_sampling
+                pct_sampling.write_csv(output_file_path)
+                del merged_df, pct_sampling
 
         output_path = merge_all_csvs_for_symbol(
             symbol=ins,
@@ -460,8 +474,9 @@ if __name__ == "__main__":
         start_date="2025_04_06",
         end_date="2025_06_04",
         threshold=0.001,
-        rolling_window=1000,
+        rolling_window=2000,
         output_dir=output_directory,
-        target_instruments=instruments
+        target_instruments=instruments,
+        resample=True,
     )
 
