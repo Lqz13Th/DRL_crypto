@@ -21,6 +21,7 @@ def rolling_zscore(series, window=72, clip_value=5):
 def calculate_factors(alt_factor_df, zscore_window=72):
     alt_factor_df = alt_factor_df.copy()
     alt_factor_df['factor_oi_change_sum'] = factor_oi_change_sum(alt_factor_df)
+    alt_factor_df['factor_oi_change_sum_long_term'] = factor_oi_change_sum(alt_factor_df, window=zscore_window)
     alt_factor_df['factor_short_term_oi_volatility'] = factor_short_term_volatility(alt_factor_df)
     alt_factor_df['factor_long_term_oi_volatility'] = factor_long_term_volatility(alt_factor_df)
     alt_factor_df['factor_short_term_oi_trend'] = factor_short_term_oi_trend(alt_factor_df)
@@ -30,6 +31,7 @@ def calculate_factors(alt_factor_df, zscore_window=72):
 
     factor_columns = [
         'factor_oi_change_sum',
+        'factor_oi_change_sum_long_term',
         'factor_short_term_oi_volatility',
         'factor_long_term_oi_volatility',
         'factor_short_term_oi_trend',
@@ -51,11 +53,13 @@ pd.set_option('display.width', 0)
 for csv_file in tqdm(base_path.glob("*_data.csv"), desc="Calculating factors"):
     try:
         df = pd.read_csv(csv_file)
+        df = df.sort_values("timestamp").dropna().reset_index(drop=True)
 
         factor_df = calculate_factors(df)
+        factor_df = factor_df.sort_values("timestamp").dropna().reset_index(drop=True)
 
         output_file = factor_output_path / csv_file.name
-        factor_df.to_csv(output_file)
+        factor_df.to_csv(output_file, index=False)
 
     except Exception as e:
         print(f"Processing files {csv_file.name} failure: {e}")

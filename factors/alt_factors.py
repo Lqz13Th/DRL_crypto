@@ -162,7 +162,7 @@ def apply_all_factors(df):
     df = df.copy()
 
     df['factor_oi_ratio'] = factor_oi_ratio(df)
-    df['factor_oi_change'] = factor_oi_change(df)
+    df['factor_oi_change'] = factor_oi_change_sum(df)
     df['factor_oi_value_change'] = factor_oi_value_change(df)
 
     df['factor_top_lsr_diff'] = factor_top_lsr_diff(df)

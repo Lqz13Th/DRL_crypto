@@ -17,24 +17,21 @@ def merge_dataframes_on_timestamp(dfs: list[pl.DataFrame], prefixes: list[str]) 
 
     dfs_renamed = [rename_with_prefix(df, prefix) for df, prefix in zip(dfs, prefixes)]
     merged = dfs_renamed[0]
+
     for df in dfs_renamed[1:]:
         merged = (
             merged
             .join(df, on="timestamp", how="full")
-            .with_columns(
-                pl
-                .when(pl.col("timestamp").is_null())
-                .then(pl.col("timestamp_right"))
-                .otherwise(pl.col("timestamp"))
-                .alias("timestamp")
-            )
+            .with_columns([
+                pl.coalesce([pl.col("timestamp"), pl.col("timestamp_right")]).alias("timestamp")
+            ])
+            .drop("timestamp_right")
         )
-
-        merged = merged.drop("timestamp_right")
 
     return merged.sort("timestamp")
 
 def auto_fill_dataframes_with_old_data(auto_fill_df: pl.DataFrame) -> pl.DataFrame:
+    auto_fill_df = auto_fill_df.sort("timestamp")
     columns_to_fill = auto_fill_df.columns
     for col in columns_to_fill:
         auto_fill_df = auto_fill_df.with_columns(
@@ -108,15 +105,17 @@ def generate_alt_oi_px_bar(
                 "sum_open_interest": row['alt_open_interest_data_sumOpenInterest'],
                 # factor raw data
                 "raw_factor_oi_change_sum": row['alt_factor_oi_change_sum'],
+                "raw_factor_oi_change_sum_long_term": row['alt_factor_oi_change_sum_long_term'],
                 "raw_factor_short_term_oi_volatility": row['alt_factor_short_term_oi_volatility'],
                 "raw_factor_long_term_oi_volatility": row['alt_factor_long_term_oi_volatility'],
                 "raw_factor_short_term_oi_trend": row['alt_factor_short_term_oi_trend'],
-                "raw_trade_taker_buy_sell_vol_diff": row['alt_factor_long_term_oi_trend'],
-                "raw_factor_long_term_oi_trend": row['alt_factor_buy_sell_vlm_diff'],
+                "raw_factor_long_term_oi_trend": row['alt_factor_long_term_oi_trend'],
+                "raw_factor_buy_sell_vlm_diff": row['alt_factor_buy_sell_vlm_diff'],
                 "raw_factor_sentiment_net": row['alt_factor_sentiment_net'],
 
                 # factor data
                 "z_factor_oi_change": row['alt_z_factor_oi_change_sum'],
+                "z_factor_oi_change_long_term": row['alt_z_factor_oi_change_sum_long_term'],
                 "z_factor_short_term_oi_volatility": row['alt_z_factor_short_term_oi_volatility'],
                 "z_factor_long_term_oi_volatility": row['alt_z_factor_long_term_oi_volatility'],
                 "z_factor_short_term_oi_trend": row['alt_z_factor_short_term_oi_trend'],
@@ -145,14 +144,14 @@ def generate_alt_oi_px_bar(
 def z_score_expr(col_name: str, window: int) -> pl.Expr:
     return (
             (pl.col(col_name) - pl.col(col_name)
-             .rolling_mean(window, min_periods=1)
+             .rolling_mean(window, min_samples=1)
              .fill_null(strategy="zero"))
             / (pl.col(col_name)
-               .rolling_std(window, min_periods=1)
+               .rolling_std(window, min_samples=1)
                .fill_nan(0) + 1e-6)
     ).fill_null(0).alias(f"z_{col_name}")
 
-def divergence_expr_with_sign(window: int):
+def divergence_expr_with_sign(window: int) -> pl.Expr:
     px_sign = (
         pl.when(pl.col(f"z_px_pct_rol_sum_{window}") > 0)
           .then(1)
@@ -176,6 +175,30 @@ def divergence_expr_with_sign(window: int):
         .alias("factor_oi_px_divergence_with_sign")
     )
 
+def divergence_expr_with_sign_long_term(window: int) -> pl.Expr:
+    px_sign = (
+        pl.when(pl.col(f"z_px_pct_rol_sum_{window}") > 0)
+          .then(1)
+          .when(pl.col(f"z_px_pct_rol_sum_{window}") < 0)
+          .then(-1)
+          .otherwise(0)
+    )
+
+    oi_sign = (
+        pl.when(pl.col("z_factor_oi_change_long_term") > 0)
+        .then(1)
+        .when(pl.col("z_factor_oi_change_long_term") < 0)
+        .then(-1)
+        .otherwise(0)
+    )
+
+    is_divergent = (px_sign * oi_sign) < 0
+
+    return  (
+        ((pl.col(f"z_px_pct_rol_sum_{window}") + pl.col("z_factor_oi_change_long_term").abs()) * is_divergent.cast(pl.Int8))
+        .alias("factor_oi_px_divergence_with_sign_long_term")
+    )
+
 def cal_factors_with_sampled_data(
         input_path: str,
         window: int,
@@ -186,6 +209,7 @@ def cal_factors_with_sampled_data(
         pl
         .scan_csv(input_path)
         .with_columns([
+            pl.col("px_pct").rolling_sum(10).alias(f"px_pct_rol_sum_{10}"),
             pl.col("px_pct").rolling_sum(20).alias(f"px_pct_rol_sum_{20}"),
             pl.col("px_pct").rolling_sum(40).alias(f"px_pct_rol_sum_{40}"),
             pl.col("px_pct").rolling_sum(80).alias(f"px_pct_rol_sum_{80}"),
@@ -244,8 +268,37 @@ def cal_factors_with_sampled_data(
                 pl.col(f"px_pct_rol_sum_{window}") * pl.col("raw_factor_oi_change_sum").abs()
             ).otherwise(0.0)
             .alias("oi_down_divergence"),
+
+            pl.when(
+                (pl.col(f"px_pct_rol_sum_{window}") > 0) & (pl.col("raw_factor_oi_change_sum_long_term") < 0)
+            ).then(
+                pl.col(f"px_pct_rol_sum_{window}") * pl.col("raw_factor_oi_change_sum_long_term").abs()
+            ).otherwise(0.0)
+            .alias("oi_up_divergence_long_term"),
+
+            pl.when(
+                (pl.col(f"px_pct_rol_sum_{10}") < 0) & (pl.col("raw_factor_oi_change_sum_long_term") > 0)
+            ).then(
+                pl.col(f"px_pct_rol_sum_{10}") * pl.col("raw_factor_oi_change_sum_long_term").abs()
+            ).otherwise(0.0)
+            .alias("oi_down_divergence_long_term"),
+
+            pl.when(
+                (pl.col(f"px_pct_rol_sum_{10}") > 0) & (pl.col("raw_factor_oi_change_sum") < 0)
+            ).then(
+                pl.col(f"px_pct_rol_sum_{10}") * pl.col("raw_factor_oi_change_sum").abs()
+            ).otherwise(0.0)
+            .alias("oi_up_divergence_short_term"),
+
+            pl.when(
+                (pl.col(f"px_pct_rol_sum_{10}") < 0) & (pl.col("raw_factor_oi_change_sum") > 0)
+            ).then(
+                pl.col(f"px_pct_rol_sum_{10}") * pl.col("raw_factor_oi_change_sum").abs()
+            ).otherwise(0.0)
+            .alias("oi_down_divergence_short_term"),
         ])
         .with_columns([
+            z_score_expr(f"px_pct_rol_sum_{10}", window),
             z_score_expr(f"px_pct_rol_sum_{20}", window),
             z_score_expr(f"px_pct_rol_sum_{40}", window),
             z_score_expr(f"px_pct_rol_sum_{80}", window),
@@ -264,12 +317,23 @@ def cal_factors_with_sampled_data(
             z_score_expr(f"oi_px_diff_{window}", window),
             z_score_expr("oi_up_divergence", window),
             z_score_expr("oi_down_divergence", window),
+            z_score_expr("oi_up_divergence_long_term", window),
+            z_score_expr("oi_down_divergence_long_term", window),
+            z_score_expr("oi_up_divergence_short_term", window),
+            z_score_expr("oi_down_divergence_short_term", window),
         ])
         .with_columns([
             (pl.col("z_oi_up_divergence") + pl.col("z_oi_down_divergence")).alias("oi_di"),
+            (pl.col("oi_up_divergence_long_term") + pl.col("oi_down_divergence_long_term")).alias("oi_di_long_term"),
+            (pl.col("oi_up_divergence_short_term") + pl.col("oi_down_divergence_short_term")).alias("oi_di_short_term"),
+
+            (pl.col(f"bs_imba_rol_mean_{window}") - pl.col(f"px_pct_rol_sum_{window}")).alias("taker_px_pct_diff"),
 
             (pl.col(f"z_px_pct_rol_sum_{window}") / (pl.col("z_factor_short_term_oi_trend").abs() + EPSILON))
             .alias("factor_px_oi_force"),
+
+            (pl.col(f"z_px_pct_rol_sum_{window}") / (pl.col("z_factor_long_term_oi_trend").abs() + EPSILON))
+            .alias("factor_px_oi_long_term_force"),
 
             (pl.col("z_factor_short_term_oi_trend") - pl.col("z_factor_long_term_oi_trend"))
             .alias("factor_oi_trend_slope"),
@@ -284,11 +348,16 @@ def cal_factors_with_sampled_data(
             .alias("factor_orderflow_sz_momentum"),
 
             divergence_expr_with_sign(window),
+            divergence_expr_with_sign_long_term(window),
         ])
         .with_columns([
             z_score_expr("oi_di", window),
+            z_score_expr("oi_di_long_term", window),
             z_score_expr("factor_oi_px_divergence_with_sign", window),
+            z_score_expr("factor_oi_px_divergence_with_sign_long_term", window),
+            z_score_expr("taker_px_pct_diff", window),
             z_score_expr("factor_px_oi_force", window),
+            z_score_expr("factor_px_oi_long_term_force", window),
             z_score_expr("factor_oi_trend_slope", window),
             z_score_expr("factor_impact_momentum", window),
             z_score_expr("factor_impact_sensitivity", window),
@@ -307,12 +376,17 @@ def cal_factors_with_sampled_data(
             (pl.col("z_factor_impact_momentum") * pl.col("z_factor_oi_change"))
             .alias("factor_oi_momentum_punch"),
 
+            (pl.col("z_factor_impact_momentum") * pl.col("z_factor_oi_change_long_term"))
+            .alias("factor_oi_momentum_long_term_punch"),
+
         ])
         .with_columns([
             z_score_expr("factor_oi_breakout_signal", window),
             z_score_expr("factor_momentum_trend_confirm", window),
             z_score_expr("factor_order_sentiment_divergence", window),
             z_score_expr("factor_oi_momentum_punch", window),
+            z_score_expr("factor_oi_momentum_long_term_punch", window),
+
         ])
         .drop_nulls()
         .collect()
@@ -372,7 +446,6 @@ def process_data_by_day_with_multiple_pairs(
                 lob_df = psd.parse_lob_data_tardis(tardis_lob_path)
                 ts_min = min(trade_df['timestamp'].min(), lob_df['timestamp'].min()) - 1 * 1000 * 1000
                 ts_max = max(trade_df['timestamp'].max(), lob_df['timestamp'].max())
-
                 alt_daily_df = alt_df.filter(
                     (pl.col('timestamp') >= ts_min) &
                     (pl.col('timestamp') <= ts_max)
@@ -465,18 +538,44 @@ def merge_all_csvs_for_symbol(
 
 if __name__ == "__main__":
     from ppo_algo.datas.high_frequency_data_parser import ParseHFTData
+    import time
 
-
-    instruments = ["BTCUSDT", "ETHUSDT", "FILUSDT", "GUNUSDT", "JASMYUSDT"]
-    # instruments = ["BTCUSDT"]
+    # instruments = ["ETHUSDT", "SOLUSDT", "DOGEUSDT", "FILUSDT", "GUNUSDT", "JASMYUSDT"]
+    instruments = ["BTCUSDT"]
     output_directory = "C:/quant/data/binance_resampled_data"
+
+    print("start", time.strftime("%Y-%m-%d %H:%M:%S"))
     process_data_by_day_with_multiple_pairs(
-        start_date="2025_04_06",
-        end_date="2025_06_04",
+        start_date="2025_04_07",
+        end_date="2025_06_10",
         threshold=0.001,
-        rolling_window=2000,
+        rolling_window=200,
         output_dir=output_directory,
         target_instruments=instruments,
         resample=True,
     )
+    print("task 1 finished", time.strftime("%Y-%m-%d %H:%M:%S"))
+    #
+    # process_data_by_day_with_multiple_pairs(
+    #     start_date="2025_04_07",
+    #     end_date="2025_06_10",
+    #     threshold=0.002,
+    #     rolling_window=200,
+    #     output_dir=output_directory,
+    #     target_instruments=instruments,
+    #     resample=True,
+    # )
+    # print("task 2 finished", time.strftime("%Y-%m-%d %H:%M:%S"))
+    #
+    # process_data_by_day_with_multiple_pairs(
+    #     start_date="2025_04_07",
+    #     end_date="2025_06_10",
+    #     threshold=0.005,
+    #     rolling_window=100,
+    #     output_dir=output_directory,
+    #     target_instruments=instruments,
+    #     resample=True,
+    # )
+    # print("task 3 start", time.strftime("%Y-%m-%d %H:%M:%S"))
+
 

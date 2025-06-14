@@ -69,32 +69,3 @@ def calculate_ask_amount_sum_row(row: dict, start_level: int = 1, end_level: int
     return total_amount
 
 
-import polars as pl
-
-# 构造数据
-df = pl.DataFrame({
-    "lob_asks[0].price": [100, 101],
-    "lob_asks[0].amount": [3, 5],
-    "lob_asks[1].price": [102, 103],
-    "lob_asks[1].amount": [5, 10],
-    "lob_bids[0].price": [99, 100],
-    "lob_bids[0].amount": [2, 4],
-    "lob_bids[1].price": [98, 99],
-    "lob_bids[1].amount": [10, 15],
-})
-
-# 使用单行 row + map 方式
-imn = 50
-levels = 2
-df = df.with_columns([
-    pl.Series(
-        name=f"impact_price_pct_ask@{imn}",
-        values=[impact_price_pct_ask_row(row, imn, levels) for row in df.iter_rows(named=True)]
-    ),
-    pl.Series(
-        name=f"impact_price_pct_bid@{imn}",
-        values=[impact_price_pct_bid_row(row, imn, levels) for row in df.iter_rows(named=True)]
-    ),
-])
-
-print(df)
