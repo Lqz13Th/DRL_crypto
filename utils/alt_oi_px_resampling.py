@@ -540,8 +540,8 @@ if __name__ == "__main__":
     from ppo_algo.datas.high_frequency_data_parser import ParseHFTData
     import time
 
-    # instruments = ["ETHUSDT", "SOLUSDT", "DOGEUSDT", "FILUSDT", "GUNUSDT", "JASMYUSDT"]
-    instruments = ["BTCUSDT"]
+    instruments = ["ETHUSDT", "SOLUSDT", "DOGEUSDT", "FILUSDT", "GUNUSDT", "JASMYUSDT"]
+    # instruments = ["BTCUSDT"]
     output_directory = "C:/quant/data/binance_resampled_data"
 
     print("start", time.strftime("%Y-%m-%d %H:%M:%S"))
@@ -549,33 +549,33 @@ if __name__ == "__main__":
         start_date="2025_04_07",
         end_date="2025_06_10",
         threshold=0.001,
-        rolling_window=200,
+        rolling_window=2000,
         output_dir=output_directory,
         target_instruments=instruments,
         resample=True,
     )
     print("task 1 finished", time.strftime("%Y-%m-%d %H:%M:%S"))
-    #
-    # process_data_by_day_with_multiple_pairs(
-    #     start_date="2025_04_07",
-    #     end_date="2025_06_10",
-    #     threshold=0.002,
-    #     rolling_window=200,
-    #     output_dir=output_directory,
-    #     target_instruments=instruments,
-    #     resample=True,
-    # )
-    # print("task 2 finished", time.strftime("%Y-%m-%d %H:%M:%S"))
-    #
-    # process_data_by_day_with_multiple_pairs(
-    #     start_date="2025_04_07",
-    #     end_date="2025_06_10",
-    #     threshold=0.005,
-    #     rolling_window=100,
-    #     output_dir=output_directory,
-    #     target_instruments=instruments,
-    #     resample=True,
-    # )
-    # print("task 3 start", time.strftime("%Y-%m-%d %H:%M:%S"))
+
+    process_data_by_day_with_multiple_pairs(
+        start_date="2025_04_07",
+        end_date="2025_06_10",
+        threshold=0.002,
+        rolling_window=2000,
+        output_dir=output_directory,
+        target_instruments=instruments,
+        resample=True,
+    )
+    print("task 2 finished", time.strftime("%Y-%m-%d %H:%M:%S"))
+
+    process_data_by_day_with_multiple_pairs(
+        start_date="2025_04_07",
+        end_date="2025_06_10",
+        threshold=0.005,
+        rolling_window=1000,
+        output_dir=output_directory,
+        target_instruments=instruments,
+        resample=True,
+    )
+    print("task 3 start", time.strftime("%Y-%m-%d %H:%M:%S"))
 
 
