@@ -84,24 +84,21 @@ def generate_alt_oi_px_bar(
         else:
             sum_sell_size += sz
 
-        if abs(px_pct) > threshold:
+        if abs(px_pct) > threshold and ts - last_ts > 1_000_000:
             ts_duration = ts - last_ts
 
             sampled_data = {
                 # raw data
-                "timestamp": ts,
+                "timestamp": ts / 1_000,
                 "px": px,
                 "sum_buy_sz": sum_buy_size,
                 "sum_sell_sz": sum_sell_size,
-                "ts_duration": ts_duration,
+                "ts_duration": ts_duration / 1_000,
                 "px_pct": px_pct,
                 "bs_imbalance": sum_buy_size - sum_sell_size,
                 "top_acc_longShortRatio": row['alt_top_long_short_account_ratio_data_longShortRatio'],
                 "top_pos_longShortRatio": row['alt_top_long_short_position_ratio_data_longShortRatio'],
                 "acc_longShortRatio": row['alt_long_short_ratio_data_longShortRatio'],
-                "trade_taker_buySellRatio": row['alt_trade_taker_long_short_ratio_data_buySellRatio'],
-                "trade_taker_buy_vol": row['alt_trade_taker_long_short_ratio_data_buyVol'],
-                "trade_taker_sell_vol": row['alt_trade_taker_long_short_ratio_data_sellVol'],
                 "sum_open_interest": row['alt_open_interest_data_sumOpenInterest'],
                 # factor raw data
                 "raw_factor_oi_change_sum": row['alt_factor_oi_change_sum'],
@@ -110,9 +107,7 @@ def generate_alt_oi_px_bar(
                 "raw_factor_long_term_oi_volatility": row['alt_factor_long_term_oi_volatility'],
                 "raw_factor_short_term_oi_trend": row['alt_factor_short_term_oi_trend'],
                 "raw_factor_long_term_oi_trend": row['alt_factor_long_term_oi_trend'],
-                "raw_factor_buy_sell_vlm_diff": row['alt_factor_buy_sell_vlm_diff'],
                 "raw_factor_sentiment_net": row['alt_factor_sentiment_net'],
-
                 # factor data
                 "z_factor_oi_change": row['alt_z_factor_oi_change_sum'],
                 "z_factor_oi_change_long_term": row['alt_z_factor_oi_change_sum_long_term'],
@@ -120,7 +115,6 @@ def generate_alt_oi_px_bar(
                 "z_factor_long_term_oi_volatility": row['alt_z_factor_long_term_oi_volatility'],
                 "z_factor_short_term_oi_trend": row['alt_z_factor_short_term_oi_trend'],
                 "z_factor_long_term_oi_trend": row['alt_z_factor_long_term_oi_trend'],
-                "z_factor_buy_sell_vlm_diff": row['alt_z_factor_buy_sell_vlm_diff'],
                 "z_factor_sentiment_net": row['alt_z_factor_sentiment_net'],
 
                 # aux data
@@ -149,7 +143,7 @@ def z_score_expr(col_name: str, window: int) -> pl.Expr:
             / (pl.col(col_name)
                .rolling_std(window, min_samples=1)
                .fill_nan(0) + 1e-6)
-    ).fill_null(0).alias(f"z_{col_name}")
+    ).fill_null(0).clip(-5.0, 5.0).alias(f"z_{col_name}")
 
 def divergence_expr_with_sign(window: int) -> pl.Expr:
     px_sign = (
@@ -386,7 +380,6 @@ def cal_factors_with_sampled_data(
             z_score_expr("factor_order_sentiment_divergence", window),
             z_score_expr("factor_oi_momentum_punch", window),
             z_score_expr("factor_oi_momentum_long_term_punch", window),
-
         ])
         .drop_nulls()
         .collect()
@@ -420,6 +413,8 @@ def process_data_by_day_with_multiple_pairs(
 
         cols = [col for col in alt_df.collect_schema().names() if col != '']
 
+        DELAY_MINUTES = 5
+
         alt_df = (
             alt_df
             .select(cols)
@@ -431,6 +426,9 @@ def process_data_by_day_with_multiple_pairs(
                 ) for col in cols
             ])
             .with_columns(
+                (pl.col("timestamp") + DELAY_MINUTES * 60 * 1000).alias("timestamp")  # 加 5 分钟（单位：毫秒）
+            )
+            .with_columns(
                 (pl.col("timestamp") * 1000).alias("timestamp")
             )
             .collect()
@@ -440,6 +438,7 @@ def process_data_by_day_with_multiple_pairs(
 
         if resample:
             for date in tqdm(dates_list, desc='Processing bars', total=len(dates_list)):
+                print(date)
                 tardis_trade_path = tardis_trade_path_template.format(date=date, symbol=ins)
                 tardis_lob_path = tardis_lob_path_template.format(date=date, symbol=ins)
                 trade_df = psd.parse_trade_data_tardis(tardis_trade_path)
@@ -454,10 +453,12 @@ def process_data_by_day_with_multiple_pairs(
                     [trade_df, lob_df, alt_daily_df],
                     ["trades_", "lob_", "alt_"]
                 )
+                # print(trade_df)
+                # print(lob_df)
                 del trade_df, lob_df, alt_daily_df,
 
                 auto_filled_df = auto_fill_dataframes_with_old_data(merged_df).drop_nulls()
-                print(auto_filled_df)
+                # print(auto_filled_df)
                 pct_sampling = generate_alt_oi_px_bar(auto_filled_df, threshold)
                 symbol_folder = os.path.join(output_dir, ins)
                 if not os.path.exists(symbol_folder):
@@ -467,7 +468,7 @@ def process_data_by_day_with_multiple_pairs(
                     symbol_folder,
                     f"resampled_data_{ins}_{date}_threshold{threshold}.csv"
                 )
-
+                # print(pct_sampling)
                 pct_sampling.write_csv(output_file_path)
                 del merged_df, pct_sampling
 
@@ -540,36 +541,52 @@ if __name__ == "__main__":
     from ppo_algo.datas.high_frequency_data_parser import ParseHFTData
     import time
 
-    instruments = ["ETHUSDT", "SOLUSDT", "DOGEUSDT", "FILUSDT", "GUNUSDT", "JASMYUSDT"]
     # instruments = ["BTCUSDT"]
     output_directory = "C:/quant/data/binance_resampled_data"
+    # #
+    # print("start", time.strftime("%Y-%m-%d %H:%M:%S"))
+    # process_data_by_day_with_multiple_pairs(
+    #     start_date="2025_04_07",
+    #     end_date="2025_06_24",
+    #     threshold=0.001,
+    #     rolling_window=2000,
+    #     output_dir=output_directory,
+    #     target_instruments=instruments,
+    #     resample=True,
+    # )
+    # print("task 1 finished", time.strftime("%Y-%m-%d %H:%M:%S"))
 
-    print("start", time.strftime("%Y-%m-%d %H:%M:%S"))
+    # instruments = ["ETHUSDT" "SOLUSDT", "DOGEUSDT", "FILUSDT"]
+    token_list = [
+        # Tier 0
+        # 'btcusdt',
+
+        # Tier 1.5
+        # 'ethusdt',
+
+        # Tier 2
+        'bnbusdt', 'solusdt', 'dogeusdt', 'filusdt', 'ltcusdt', 'avaxusdt', 'atomusdt',
+        'adausdt', 'xrpusdt', 'linkusdt', 'dotusdt', 'tonusdt', 'uniusdt', 'sandusdt',
+
+        # Tier 3
+        # 'jasmyusdt', 'gunusdt',
+    ]
+
     process_data_by_day_with_multiple_pairs(
         start_date="2025_04_07",
-        end_date="2025_06_10",
-        threshold=0.001,
-        rolling_window=2000,
-        output_dir=output_directory,
-        target_instruments=instruments,
-        resample=True,
-    )
-    print("task 1 finished", time.strftime("%Y-%m-%d %H:%M:%S"))
-
-    process_data_by_day_with_multiple_pairs(
-        start_date="2025_04_07",
-        end_date="2025_06_10",
+        end_date="2025_06_24",
         threshold=0.002,
-        rolling_window=2000,
+        rolling_window=500,
         output_dir=output_directory,
-        target_instruments=instruments,
+        target_instruments=token_list,
         resample=True,
     )
     print("task 2 finished", time.strftime("%Y-%m-%d %H:%M:%S"))
 
+    instruments = ["GUNUSDT", "JASMYUSDT"]
     process_data_by_day_with_multiple_pairs(
         start_date="2025_04_07",
-        end_date="2025_06_10",
+        end_date="2025_06_24",
         threshold=0.005,
         rolling_window=1000,
         output_dir=output_directory,
