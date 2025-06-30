@@ -438,7 +438,7 @@ def process_data_by_day_with_multiple_pairs(
 
         if resample:
             for date in tqdm(dates_list, desc='Processing bars', total=len(dates_list)):
-                print(date)
+                # print(date)
                 tardis_trade_path = tardis_trade_path_template.format(date=date, symbol=ins)
                 tardis_lob_path = tardis_lob_path_template.format(date=date, symbol=ins)
                 trade_df = psd.parse_trade_data_tardis(tardis_trade_path)
@@ -562,7 +562,7 @@ if __name__ == "__main__":
         # 'btcusdt',
 
         # Tier 1.5
-        # 'ethusdt',
+        'ethusdt',
 
         # Tier 2
         'bnbusdt', 'solusdt', 'dogeusdt', 'filusdt', 'ltcusdt', 'avaxusdt', 'atomusdt',
@@ -571,28 +571,29 @@ if __name__ == "__main__":
         # Tier 3
         # 'jasmyusdt', 'gunusdt',
     ]
-
+    token_list = [t.upper() for t in token_list]
+    print(token_list)
     process_data_by_day_with_multiple_pairs(
         start_date="2025_04_07",
-        end_date="2025_06_24",
+        end_date="2025_06_29",
         threshold=0.002,
-        rolling_window=500,
+        rolling_window=2000,
         output_dir=output_directory,
         target_instruments=token_list,
-        resample=True,
+        resample=False,
     )
     print("task 2 finished", time.strftime("%Y-%m-%d %H:%M:%S"))
 
-    instruments = ["GUNUSDT", "JASMYUSDT"]
-    process_data_by_day_with_multiple_pairs(
-        start_date="2025_04_07",
-        end_date="2025_06_24",
-        threshold=0.005,
-        rolling_window=1000,
-        output_dir=output_directory,
-        target_instruments=instruments,
-        resample=True,
-    )
-    print("task 3 start", time.strftime("%Y-%m-%d %H:%M:%S"))
-
+    # instruments = ["GUNUSDT", "JASMYUSDT"]
+    # process_data_by_day_with_multiple_pairs(
+    #     start_date="2025_04_07",
+    #     end_date="2025_06_24",
+    #     threshold=0.005,
+    #     rolling_window=1000,
+    #     output_dir=output_directory,
+    #     target_instruments=token_list,
+    #     resample=True,
+    # )
+    # print("task 3 start", time.strftime("%Y-%m-%d %H:%M:%S"))
+    #
 
